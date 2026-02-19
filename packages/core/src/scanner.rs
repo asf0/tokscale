@@ -19,6 +19,7 @@ pub enum SessionType {
     OpenClaw,
     Pi,
     Kimi,
+    Kilo,
 }
 
 /// Result of scanning all session directories
@@ -37,6 +38,7 @@ pub struct ScanResult {
     pub openclaw_files: Vec<PathBuf>,
     pub pi_files: Vec<PathBuf>,
     pub kimi_files: Vec<PathBuf>,
+    pub kilo_files: Vec<PathBuf>,
 }
 
 impl ScanResult {
@@ -52,6 +54,7 @@ impl ScanResult {
             + self.openclaw_files.len()
             + self.pi_files.len()
             + self.kimi_files.len()
+            + self.kilo_files.len()
     }
 
     /// Get all files as a single vector
@@ -87,6 +90,9 @@ impl ScanResult {
         }
         for path in &self.kimi_files {
             result.push((SessionType::Kimi, path.clone()));
+        }
+        for path in &self.kilo_files {
+            result.push((SessionType::Kilo, path.clone()));
         }
 
         result
@@ -191,6 +197,7 @@ pub fn scan_all_sources(home_dir: &str, sources: &[String]) -> ScanResult {
     let include_openclaw = include_all || sources.iter().any(|s| s == "openclaw");
     let include_pi = include_all || sources.iter().any(|s| s == "pi");
     let include_kimi = include_all || sources.iter().any(|s| s == "kimi");
+    let include_kilo = include_all || sources.iter().any(|s| s == "kilo");
 
     let headless_roots = headless_roots(home_dir);
 
@@ -293,6 +300,14 @@ pub fn scan_all_sources(home_dir: &str, sources: &[String]) -> ScanResult {
         tasks.push((SessionType::Kimi, kimi_path, "wire.jsonl"));
     }
 
+    if include_kilo {
+        // Kilocode: ~/.local/share/kilo/storage/message/*/*.json
+        let xdg_data =
+            std::env::var("XDG_DATA_HOME").unwrap_or_else(|_| format!("{}/.local/share", home_dir));
+        let kilo_path = format!("{}/kilo/storage/message", xdg_data);
+        tasks.push((SessionType::Kilo, kilo_path, "*.json"));
+    }
+
     // Execute scans in parallel
     let scan_results: Vec<(SessionType, Vec<PathBuf>)> = tasks
         .into_par_iter()
@@ -315,6 +330,7 @@ pub fn scan_all_sources(home_dir: &str, sources: &[String]) -> ScanResult {
             SessionType::OpenClaw => result.openclaw_files.extend(files),
             SessionType::Pi => result.pi_files.extend(files),
             SessionType::Kimi => result.kimi_files.extend(files),
+            SessionType::Kilo => result.kilo_files.extend(files),
         }
     }
 
@@ -351,8 +367,9 @@ mod tests {
             openclaw_files: vec![],
             pi_files: vec![PathBuf::from("e.jsonl")],
             kimi_files: vec![],
+            kilo_files: vec![PathBuf::from("f.json")],
         };
-        assert_eq!(result.total_files(), 5);
+        assert_eq!(result.total_files(), 6);
     }
 
     #[test]
@@ -370,16 +387,18 @@ mod tests {
             openclaw_files: vec![],
             pi_files: vec![PathBuf::from("f.jsonl")],
             kimi_files: vec![],
+            kilo_files: vec![PathBuf::from("g.json")],
         };
 
         let all = result.all_files();
-        assert_eq!(all.len(), 6);
+        assert_eq!(all.len(), 7);
         assert_eq!(all[0], (SessionType::OpenCode, PathBuf::from("a.json")));
         assert_eq!(all[1], (SessionType::Claude, PathBuf::from("b.jsonl")));
         assert_eq!(all[2], (SessionType::Codex, PathBuf::from("c.jsonl")));
         assert_eq!(all[3], (SessionType::Gemini, PathBuf::from("d.json")));
         assert_eq!(all[4], (SessionType::Cursor, PathBuf::from("e.csv")));
         assert_eq!(all[5], (SessionType::Pi, PathBuf::from("f.jsonl")));
+        assert_eq!(all[6], (SessionType::Kilo, PathBuf::from("g.json")));
     }
 
     #[test]
@@ -539,6 +558,13 @@ mod tests {
         let mut file = File::create(kimi_session.join("wire.jsonl")).unwrap();
         file.write_all(b"{\"type\": \"metadata\", \"protocol_version\": \"1.3\"}\n")
             .unwrap();
+    }
+
+    fn setup_mock_kilo_dir(base: &std::path::Path) {
+        let kilo_session = base.join(".local/share/kilo/storage/message/ses_001");
+        fs::create_dir_all(&kilo_session).unwrap();
+        let mut file = File::create(kilo_session.join("msg_001.json")).unwrap();
+        file.write_all(b"{}").unwrap();
     }
 
     fn setup_mock_openclaw_dir(base: &std::path::Path) {
@@ -771,5 +797,25 @@ mod tests {
         assert!(result.kimi_files[0].ends_with("wire.jsonl"));
         assert!(result.opencode_files.is_empty());
         assert!(result.claude_files.is_empty());
+    }
+
+    #[test]
+    #[serial]
+    fn test_scan_all_sources_kilo() {
+        let previous_xdg = std::env::var("XDG_DATA_HOME").ok();
+
+        let dir = TempDir::new().unwrap();
+        let home = dir.path();
+        setup_mock_kilo_dir(home);
+
+        std::env::set_var("XDG_DATA_HOME", home.join(".local/share"));
+
+        let result = scan_all_sources(home.to_str().unwrap(), &["kilo".to_string()]);
+        assert_eq!(result.kilo_files.len(), 1);
+        assert!(result.kilo_files[0].ends_with("msg_001.json"));
+        assert!(result.opencode_files.is_empty());
+        assert!(result.claude_files.is_empty());
+
+        restore_env("XDG_DATA_HOME", previous_xdg);
     }
 }

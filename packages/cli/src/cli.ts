@@ -124,6 +124,7 @@ interface FilterOptions {
   openclaw?: boolean;
   pi?: boolean;
   kimi?: boolean;
+  kilo?: boolean;
 }
 
 interface DateFilterOptions {
@@ -507,6 +508,7 @@ async function main() {
     .option("--openclaw", "Show only OpenClaw usage")
     .option("--pi", "Show only Pi usage")
     .option("--kimi", "Show only Kimi CLI usage")
+    .option("--kilo", "Show only Kilocode usage")
     .option("--today", "Show only today's usage")
     .option("--week", "Show last 7 days")
     .option("--month", "Show current month")
@@ -546,6 +548,7 @@ async function main() {
     .option("--openclaw", "Show only OpenClaw usage")
     .option("--pi", "Show only Pi usage")
     .option("--kimi", "Show only Kimi CLI usage")
+    .option("--kilo", "Show only Kilocode usage")
     .option("--today", "Show only today's usage")
     .option("--week", "Show last 7 days")
     .option("--month", "Show current month")
@@ -808,6 +811,7 @@ async function main() {
     .option("--openclaw", "Include only OpenClaw data")
     .option("--pi", "Include only Pi data")
     .option("--kimi", "Include only Kimi CLI data")
+    .option("--kilo", "Include only Kilocode data")
     .option("--today", "Show only today's usage")
     .option("--week", "Show last 7 days")
     .option("--month", "Show current month")
@@ -835,6 +839,7 @@ async function main() {
     .option("--openclaw", "Include only OpenClaw data")
     .option("--pi", "Include only Pi data")
     .option("--kimi", "Include only Kimi CLI data")
+    .option("--kilo", "Include only Kilocode data")
     .option("--no-spinner", "Disable loading spinner (for scripting)")
     .option("--short", "Display total tokens in abbreviated format (e.g., 7.14B)")
     .addOption(new Option("--agents", "Show Top OpenCode Agents (default)").conflicts("clients"))
@@ -882,6 +887,7 @@ async function main() {
     .option("--openclaw", "Include only OpenClaw data")
     .option("--pi", "Include only Pi data")
     .option("--kimi", "Include only Kimi CLI data")
+    .option("--kilo", "Include only Kilocode data")
     .option("--since <date>", "Start date (YYYY-MM-DD)")
     .option("--until <date>", "End date (YYYY-MM-DD)")
     .option("--year <year>", "Filter to specific year")
@@ -898,6 +904,7 @@ async function main() {
         openclaw: options.openclaw,
         pi: options.pi,
         kimi: options.kimi,
+        kilo: options.kilo,
         since: options.since,
         until: options.until,
         year: options.year,
@@ -922,6 +929,7 @@ async function main() {
     .option("--openclaw", "Show only OpenClaw usage")
     .option("--pi", "Show only Pi usage")
     .option("--kimi", "Show only Kimi CLI usage")
+    .option("--kilo", "Show only Kilocode usage")
     .option("--today", "Show only today's usage")
     .option("--week", "Show last 7 days")
     .option("--month", "Show current month")
@@ -1080,7 +1088,7 @@ async function main() {
 }
 
 function getEnabledSources(options: FilterOptions): SourceType[] | undefined {
-  const hasFilter = options.opencode || options.claude || options.codex || options.gemini || options.cursor || options.amp || options.droid || options.openclaw || options.pi || options.kimi;
+  const hasFilter = options.opencode || options.claude || options.codex || options.gemini || options.cursor || options.amp || options.droid || options.openclaw || options.pi || options.kimi || options.kilo;
   if (!hasFilter) return undefined; // All sources
 
   const sources: SourceType[] = [];
@@ -1094,6 +1102,7 @@ function getEnabledSources(options: FilterOptions): SourceType[] | undefined {
   if (options.openclaw) sources.push("openclaw");
   if (options.pi) sources.push("pi");
   if (options.kimi) sources.push("kimi");
+  if (options.kilo) sources.push("kilo");
   return sources;
 }
 

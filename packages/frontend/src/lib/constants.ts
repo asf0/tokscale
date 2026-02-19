@@ -35,6 +35,7 @@ export const SOURCE_DISPLAY_NAMES: Record<string, string> = {
   openclaw: "OpenClaw",
   pi: "Pi",
   kimi: "Kimi",
+  kilo: "Kilocode",
 };
 
 // Client logos from GitHub CDN (public repo)
@@ -63,6 +64,7 @@ export const SOURCE_COLORS: Record<string, string> = {
   openclaw: "#EF4444",
   pi: "#6366F1",
   kimi: "#8B5CF6",
+  kilo: "#F59E0B",
 };
 
 export const SOURCE_TEXT_COLORS: Record<string, string> = {

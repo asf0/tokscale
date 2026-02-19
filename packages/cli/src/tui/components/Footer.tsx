@@ -161,6 +161,12 @@ export function Footer(props: FooterProps) {
             enabled={props.enabledSources.has("kimi")}
             onToggle={props.onSourceToggle}
           />
+          <SourceBadge
+            name={isVeryNarrowTerminal() ? "K" : "K:KL"}
+            source="kilo"
+            enabled={props.enabledSources.has("kilo")}
+            onToggle={props.onSourceToggle}
+          />
           <Show when={!isVeryNarrowTerminal()}>
             <text dim>|</text>
             <SortButton

@@ -189,6 +189,7 @@ export interface ParsedMessages {
   openclawCount: number
   piCount: number
   kimiCount: number
+  kiloCount: number
   processingTimeMs: number
 }
 

@@ -149,6 +149,7 @@ interface NativeParsedMessages {
   openclawCount: number;
   piCount: number;
   kimiCount: number;
+  kiloCount: number;
   processingTimeMs: number;
 }
 
@@ -354,6 +355,7 @@ export interface ParsedMessages {
   openclawCount: number;
   piCount: number;
   kimiCount: number;
+  kiloCount: number;
   processingTimeMs: number;
 }
 

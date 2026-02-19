@@ -69,6 +69,7 @@ pub struct ParsedMessages {
     pub openclaw_count: i32,
     pub pi_count: i32,
     pub kimi_count: i32,
+    pub kilo_count: i32,
     pub processing_time_ms: u32,
 }
 
@@ -187,7 +188,7 @@ use sessions::UnifiedMessage;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-const DEFAULT_SOURCES: [&str; 10] = [
+const DEFAULT_SOURCES: [&str; 11] = [
     "opencode",
     "claude",
     "codex",
@@ -198,6 +199,7 @@ const DEFAULT_SOURCES: [&str; 10] = [
     "openclaw",
     "pi",
     "kimi",
+    "kilo",
 ];
 
 fn default_sources(include_cursor: bool) -> Vec<String> {
@@ -537,6 +539,17 @@ pub fn parse_local_sources(options: LocalParseOptions) -> napi::Result<ParsedMes
     let kimi_count = kimi_msgs.len() as i32;
     messages.extend(kimi_msgs);
 
+    // Parse Kilo files in parallel
+    let kilo_msgs: Vec<ParsedMessage> = scan_result
+        .kilo_files
+        .par_iter()
+        .filter_map(|path| {
+            sessions::kilo::parse_kilo_file(path).map(|msg| unified_to_parsed(&msg))
+        })
+        .collect();
+    let kilo_count = kilo_msgs.len() as i32;
+    messages.extend(kilo_msgs);
+
     // Apply date filters
     let filtered = filter_parsed_messages(messages, &options);
 
@@ -551,6 +564,7 @@ pub fn parse_local_sources(options: LocalParseOptions) -> napi::Result<ParsedMes
         openclaw_count,
         pi_count,
         kimi_count,
+        kilo_count,
         processing_time_ms: start.elapsed().as_millis() as u32,
     })
 }

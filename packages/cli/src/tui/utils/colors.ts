@@ -63,6 +63,7 @@ export const SOURCE_COLORS: Record<SourceType, string> = {
   openclaw: "#ef4444",
   pi: "#fb923c",
   kimi: "#8B5CF6",
+  kilo: "#F59E0B",
 };
 
 export function getSourceColor(source: SourceType | string): string {

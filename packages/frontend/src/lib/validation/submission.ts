@@ -30,6 +30,7 @@ const SUPPORTED_SOURCES = [
   "openclaw",
   "pi",
   "kimi",
+  "kilo",
 ] as const;
 const SourceSchema = z.enum(SUPPORTED_SOURCES);
 

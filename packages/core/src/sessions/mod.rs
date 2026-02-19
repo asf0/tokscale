@@ -9,6 +9,7 @@ pub mod cursor;
 pub mod droid;
 pub mod gemini;
 pub mod kimi;
+pub mod kilo;
 pub mod openclaw;
 pub mod opencode;
 pub mod pi;

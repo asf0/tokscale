@@ -159,7 +159,7 @@ async function loadData(
     includeCursor && isCursorLoggedIn() ? syncCursorCache() : Promise.resolve({ synced: false, rows: 0, error: undefined }),
     localSources.length > 0
       ? parseLocalSourcesAsync({ sources: localSources as SourceType[], since, until, year, sinceTs, untilTs })
-      : Promise.resolve({ messages: [], opencodeCount: 0, claudeCount: 0, codexCount: 0, geminiCount: 0, ampCount: 0, droidCount: 0, openclawCount: 0, piCount: 0, kimiCount: 0, processingTimeMs: 0 } as ParsedMessages),
+      : Promise.resolve({ messages: [], opencodeCount: 0, claudeCount: 0, codexCount: 0, geminiCount: 0, ampCount: 0, droidCount: 0, openclawCount: 0, piCount: 0, kimiCount: 0, kiloCount: 0, processingTimeMs: 0 } as ParsedMessages),
   ]);
 
   const cursorSync = phase1Results[0].status === "fulfilled" 
@@ -186,6 +186,7 @@ async function loadData(
     openclawCount: 0,
     piCount: 0,
     kimiCount: 0,
+    kiloCount: 0,
     processingTimeMs: 0,
   };
 
