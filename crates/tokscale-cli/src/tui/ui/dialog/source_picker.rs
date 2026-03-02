@@ -18,21 +18,38 @@ use crate::tui::themes::Theme;
 use super::{DialogContent, DialogResult};
 
 pub struct ClientPickerDialog {
-    clients: Vec<ClientId>,
+    sources: Vec<SourceOption>,
     enabled: Rc<RefCell<HashSet<ClientId>>>,
+    include_synthetic: Rc<RefCell<bool>>,
     needs_reload: Rc<RefCell<bool>>,
     selected: usize,
     filter: String,
     filtered_indices: Vec<usize>,
 }
 
+#[derive(Clone, Copy)]
+enum SourceOption {
+    Client(ClientId),
+    Synthetic,
+}
+
 impl ClientPickerDialog {
-    pub fn new(enabled: Rc<RefCell<HashSet<ClientId>>>, needs_reload: Rc<RefCell<bool>>) -> Self {
-        let clients = ClientId::ALL.to_vec();
-        let filtered_indices: Vec<usize> = (0..clients.len()).collect();
+    pub fn new(
+        enabled: Rc<RefCell<HashSet<ClientId>>>,
+        include_synthetic: Rc<RefCell<bool>>,
+        needs_reload: Rc<RefCell<bool>>,
+    ) -> Self {
+        let mut sources: Vec<SourceOption> = ClientId::ALL
+            .iter()
+            .copied()
+            .map(SourceOption::Client)
+            .collect();
+        sources.push(SourceOption::Synthetic);
+        let filtered_indices: Vec<usize> = (0..sources.len()).collect();
         Self {
-            clients,
+            sources,
             enabled,
+            include_synthetic,
             needs_reload,
             selected: 0,
             filter: String::new(),
@@ -57,34 +74,51 @@ impl ClientPickerDialog {
 
     fn toggle_selected(&mut self) {
         if let Some(&idx) = self.filtered_indices.get(self.selected) {
-            let client = self.clients[idx];
-            let mut enabled = self.enabled.borrow_mut();
-            let is_enabled = enabled.contains(&client);
+            let source = self.sources[idx];
+            let enabled_source_count = self.enabled_source_count();
+            match source {
+                SourceOption::Client(client) => {
+                    let mut enabled = self.enabled.borrow_mut();
+                    let is_enabled = enabled.contains(&client);
 
-            if is_enabled && enabled.len() > 1 {
-                enabled.remove(&client);
-                *self.needs_reload.borrow_mut() = true;
-            } else if !is_enabled {
-                enabled.insert(client);
-                *self.needs_reload.borrow_mut() = true;
+                    if is_enabled && enabled_source_count > 1 {
+                        enabled.remove(&client);
+                        *self.needs_reload.borrow_mut() = true;
+                    } else if !is_enabled {
+                        enabled.insert(client);
+                        *self.needs_reload.borrow_mut() = true;
+                    }
+                }
+                SourceOption::Synthetic => {
+                    let is_enabled = *self.include_synthetic.borrow();
+                    if is_enabled && enabled_source_count > 1 {
+                        *self.include_synthetic.borrow_mut() = false;
+                        *self.needs_reload.borrow_mut() = true;
+                    } else if !is_enabled {
+                        *self.include_synthetic.borrow_mut() = true;
+                        *self.needs_reload.borrow_mut() = true;
+                    }
+                }
             }
         }
+    }
+
+    fn enabled_source_count(&self) -> usize {
+        let client_count = self.enabled.borrow().len();
+        let synthetic_count = usize::from(*self.include_synthetic.borrow());
+        client_count + synthetic_count
     }
 
     fn rebuild_filter(&mut self) {
         let needle = self.filter.to_lowercase();
         if needle.is_empty() {
-            self.filtered_indices = (0..self.clients.len()).collect();
+            self.filtered_indices = (0..self.sources.len()).collect();
         } else {
             self.filtered_indices = self
-                .clients
+                .sources
                 .iter()
                 .enumerate()
-                .filter(|(_, s)| {
-                    client_ui::display_name(**s)
-                        .to_lowercase()
-                        .contains(&needle)
-                })
+                .filter(|(_, s)| source_display_name(**s).to_lowercase().contains(&needle))
                 .map(|(i, _)| i)
                 .collect();
         }
@@ -151,13 +185,16 @@ impl DialogContent for ClientPickerDialog {
                 break;
             }
 
-            let client = self.clients[idx];
+            let source = self.sources[idx];
             let is_selected = flat_idx == self.selected;
-            let is_enabled = self.enabled.borrow().contains(&client);
+            let is_enabled = match source {
+                SourceOption::Client(client) => self.enabled.borrow().contains(&client),
+                SourceOption::Synthetic => *self.include_synthetic.borrow(),
+            };
 
             let checkbox = if is_enabled { "[●]" } else { "[ ]" };
-            let key_hint = format!("[{}]", client_ui::hotkey(client));
-            let name = client_ui::display_name(client);
+            let key_hint = format!("[{}]", source_hotkey(source));
+            let name = source_display_name(source);
 
             let usable = list_area.width.saturating_sub(4) as usize;
             let left = format!("{} {} {}", checkbox, key_hint, name);
@@ -216,14 +253,24 @@ impl DialogContent for ClientPickerDialog {
                 DialogResult::None
             }
             KeyCode::Char(c) => {
+                let enabled_source_count = self.enabled_source_count();
                 if let Some(client) = client_ui::from_hotkey(c) {
                     let mut enabled = self.enabled.borrow_mut();
                     let is_enabled = enabled.contains(&client);
-                    if is_enabled && enabled.len() > 1 {
+                    if is_enabled && enabled_source_count > 1 {
                         enabled.remove(&client);
                         *self.needs_reload.borrow_mut() = true;
                     } else if !is_enabled {
                         enabled.insert(client);
+                        *self.needs_reload.borrow_mut() = true;
+                    }
+                } else if c == 'x' {
+                    let is_enabled = *self.include_synthetic.borrow();
+                    if is_enabled && enabled_source_count > 1 {
+                        *self.include_synthetic.borrow_mut() = false;
+                        *self.needs_reload.borrow_mut() = true;
+                    } else if !is_enabled {
+                        *self.include_synthetic.borrow_mut() = true;
                         *self.needs_reload.borrow_mut() = true;
                     }
                 } else {
@@ -234,5 +281,19 @@ impl DialogContent for ClientPickerDialog {
             }
             _ => DialogResult::None,
         }
+    }
+}
+
+fn source_display_name(source: SourceOption) -> &'static str {
+    match source {
+        SourceOption::Client(client) => client_ui::display_name(client),
+        SourceOption::Synthetic => "Synthetic",
+    }
+}
+
+fn source_hotkey(source: SourceOption) -> char {
+    match source {
+        SourceOption::Client(client) => client_ui::hotkey(client),
+        SourceOption::Synthetic => 'x',
     }
 }

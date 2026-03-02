@@ -111,7 +111,12 @@ impl DataLoader {
         }
     }
 
-    pub fn load(&self, enabled_clients: &[ClientId], group_by: &GroupBy) -> Result<UsageData> {
+    pub fn load(
+        &self,
+        enabled_clients: &[ClientId],
+        group_by: &GroupBy,
+        include_synthetic: bool,
+    ) -> Result<UsageData> {
         let home = dirs::home_dir()
             .ok_or_else(|| anyhow::anyhow!("Could not find home directory"))?
             .to_string_lossy()
@@ -121,10 +126,19 @@ impl DataLoader {
         let pricing_result = rt.block_on(async { PricingService::get_or_init().await });
         let pricing = pricing_result.as_ref().ok();
 
-        let sources: Vec<String> = enabled_clients
+        let clients_to_parse: Vec<ClientId> = if include_synthetic {
+            ClientId::ALL.to_vec()
+        } else {
+            enabled_clients.to_vec()
+        };
+
+        let mut sources: Vec<String> = clients_to_parse
             .iter()
             .map(|client| client.as_str().to_string())
             .collect();
+        if include_synthetic {
+            sources.push("synthetic".to_string());
+        }
 
         let scan_result = scanner::scan_all_clients(&home, &sources);
 
@@ -133,7 +147,7 @@ impl DataLoader {
         // OpenCode: read both SQLite (1.2+) and legacy JSON, deduplicate by message ID
         let mut opencode_seen: HashSet<String> = HashSet::new();
 
-        for client in enabled_clients.iter().copied() {
+        for client in clients_to_parse.iter().copied() {
             match client {
                 ClientId::OpenCode => {
                     if let Some(db_path) = &scan_result.opencode_db {
@@ -266,6 +280,36 @@ impl DataLoader {
                 }
             }
         }
+
+        if include_synthetic {
+            if let Some(db_path) = &scan_result.synthetic_db {
+                all_messages.extend(sessions::synthetic::parse_octofriend_sqlite(db_path));
+            }
+
+            for msg in &mut all_messages {
+                if msg.client == "synthetic" {
+                    continue;
+                }
+                if sessions::synthetic::is_synthetic_model(&msg.model_id)
+                    || sessions::synthetic::is_synthetic_provider(&msg.provider_id)
+                {
+                    msg.client = "synthetic".to_string();
+                    msg.model_id = sessions::synthetic::normalize_synthetic_model(&msg.model_id);
+                    if !msg.provider_id.is_empty() {
+                        msg.provider_id = "synthetic".to_string();
+                    }
+                }
+            }
+        }
+
+        let mut requested_clients: HashSet<String> = enabled_clients
+            .iter()
+            .map(|client| client.as_str().to_string())
+            .collect();
+        if include_synthetic {
+            requested_clients.insert("synthetic".to_string());
+        }
+        all_messages.retain(|msg| requested_clients.contains(&msg.client));
 
         if let Some(svc) = pricing {
             for msg in &mut all_messages {

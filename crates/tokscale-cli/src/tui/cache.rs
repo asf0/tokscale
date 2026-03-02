@@ -36,6 +36,8 @@ fn cache_file() -> Option<PathBuf> {
 struct CachedTUIData {
     timestamp: u64,
     enabled_clients: Vec<String>,
+    #[serde(default)]
+    include_synthetic: bool,
     data: CachedUsageData,
 }
 
@@ -313,7 +315,7 @@ pub enum CacheResult {
 /// Load cached TUI data from disk with a single read/parse.
 /// Returns Fresh/Stale/Miss so the caller can decide whether to
 /// display cached data immediately and/or trigger a background refresh.
-pub fn load_cache(enabled_clients: &HashSet<ClientId>) -> CacheResult {
+pub fn load_cache(enabled_clients: &HashSet<ClientId>, include_synthetic: bool) -> CacheResult {
     let Some(cache_path) = cache_file() else {
         return CacheResult::Miss;
     };
@@ -333,7 +335,12 @@ pub fn load_cache(enabled_clients: &HashSet<ClientId>) -> CacheResult {
     };
 
     // Check if clients match
-    if !clients_match(enabled_clients, &cached.enabled_clients) {
+    if !clients_match(
+        enabled_clients,
+        include_synthetic,
+        &cached.enabled_clients,
+        cached.include_synthetic,
+    ) {
         return CacheResult::Miss;
     }
 
@@ -358,7 +365,15 @@ pub fn load_cache(enabled_clients: &HashSet<ClientId>) -> CacheResult {
 }
 
 /// Check if clients match between enabled and cached
-fn clients_match(enabled_clients: &HashSet<ClientId>, cached_clients: &[String]) -> bool {
+fn clients_match(
+    enabled_clients: &HashSet<ClientId>,
+    include_synthetic: bool,
+    cached_clients: &[String],
+    cached_include_synthetic: bool,
+) -> bool {
+    if include_synthetic != cached_include_synthetic {
+        return false;
+    }
     if enabled_clients.len() != cached_clients.len() {
         return false;
     }
@@ -371,7 +386,11 @@ fn clients_match(enabled_clients: &HashSet<ClientId>, cached_clients: &[String])
 }
 
 /// Save TUI data to disk cache
-pub fn save_cached_data(data: &UsageData, enabled_clients: &HashSet<ClientId>) {
+pub fn save_cached_data(
+    data: &UsageData,
+    enabled_clients: &HashSet<ClientId>,
+    include_synthetic: bool,
+) {
     let Some(cache_path) = cache_file() else {
         return;
     };
@@ -394,6 +413,7 @@ pub fn save_cached_data(data: &UsageData, enabled_clients: &HashSet<ClientId>) {
             .iter()
             .map(|s| s.as_str().to_string())
             .collect(),
+        include_synthetic,
         data: data.into(),
     };
 

@@ -65,9 +65,12 @@ pub fn run(
     };
 
     let mut enabled_clients = HashSet::new();
+    let mut include_synthetic = false;
     if let Some(ref cli_clients) = clients {
         for client_str in cli_clients {
-            if let Some(client) = ClientId::from_str(client_str) {
+            if client_str.eq_ignore_ascii_case("synthetic") {
+                include_synthetic = true;
+            } else if let Some(client) = ClientId::from_str(client_str) {
                 enabled_clients.insert(client);
             }
         }
@@ -78,7 +81,7 @@ pub fn run(
     }
 
     // Single file read: load cache and check freshness in one pass
-    let (cached_data, cache_is_stale) = match load_cache(&enabled_clients) {
+    let (cached_data, cache_is_stale) = match load_cache(&enabled_clients, include_synthetic) {
         CacheResult::Fresh(data) => (Some(data), false),
         CacheResult::Stale(data) => (Some(data), true),
         CacheResult::Miss => (None, true),
@@ -129,14 +132,15 @@ pub fn run(
         let bg_until = until.clone();
         let bg_year = year.clone();
         let bg_enabled_clients = enabled_clients.clone();
+        let bg_include_synthetic = include_synthetic;
         let bg_group_by = app.group_by.borrow().clone();
 
         thread::spawn(move || {
             let loader = DataLoader::with_filters(None, bg_since, bg_until, bg_year);
-            let result = loader.load(&bg_clients, &bg_group_by);
+            let result = loader.load(&bg_clients, &bg_group_by, bg_include_synthetic);
 
             if let Ok(ref data) = result {
-                save_cached_data(data, &bg_enabled_clients);
+                save_cached_data(data, &bg_enabled_clients, bg_include_synthetic);
             }
 
             let _ = tx.send(result);
@@ -238,13 +242,14 @@ fn run_loop_with_background(
             let until = app.data_loader.until.clone();
             let year = app.data_loader.year.clone();
             let enabled_clients = app.enabled_clients.borrow().clone();
+            let include_synthetic = *app.include_synthetic.borrow();
             let group_by = app.group_by.borrow().clone();
 
             thread::spawn(move || {
                 let loader = DataLoader::with_filters(None, since, until, year);
-                let result = loader.load(&clients, &group_by);
+                let result = loader.load(&clients, &group_by, include_synthetic);
                 if let Ok(ref data) = result {
-                    save_cached_data(data, &enabled_clients);
+                    save_cached_data(data, &enabled_clients, include_synthetic);
                 }
                 let _ = tx.send(result);
             });
@@ -294,7 +299,7 @@ pub fn test_data_loading() -> Result<()> {
         ClientId::KiloCode,
     ];
 
-    let data = loader.load(&all_clients, &tokscale_core::GroupBy::default())?;
+    let data = loader.load(&all_clients, &tokscale_core::GroupBy::default(), false)?;
 
     println!("Loaded {} models", data.models.len());
     println!("Total cost: ${:.2}", data.total_cost);

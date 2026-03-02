@@ -109,6 +109,7 @@ pub struct App {
     pub data_loader: DataLoader,
 
     pub enabled_clients: Rc<RefCell<HashSet<ClientId>>>,
+    pub include_synthetic: Rc<RefCell<bool>>,
     pub group_by: Rc<RefCell<tokscale_core::GroupBy>>,
     pub sort_field: SortField,
     pub sort_direction: SortDirection,
@@ -152,10 +153,13 @@ impl App {
         let theme = Theme::from_name(theme_name);
 
         let mut enabled_clients = HashSet::new();
+        let mut include_synthetic = false;
 
         if let Some(ref cli_clients) = config.clients {
             for client_str in cli_clients {
-                if let Some(client) = ClientId::from_str(client_str) {
+                if client_str.eq_ignore_ascii_case("synthetic") {
+                    include_synthetic = true;
+                } else if let Some(client) = ClientId::from_str(client_str) {
                     enabled_clients.insert(client);
                 }
             }
@@ -195,6 +199,7 @@ impl App {
             data,
             data_loader,
             enabled_clients: Rc::new(RefCell::new(enabled_clients)),
+            include_synthetic: Rc::new(RefCell::new(include_synthetic)),
             group_by: Rc::new(RefCell::new(tokscale_core::GroupBy::Model)),
             sort_field: SortField::Cost,
             sort_direction: SortDirection::Descending,
@@ -493,6 +498,7 @@ impl App {
     fn open_client_picker(&mut self) {
         let dialog = ClientPickerDialog::new(
             self.enabled_clients.clone(),
+            self.include_synthetic.clone(),
             self.dialog_needs_reload.clone(),
         );
         self.dialog_stack.show(Box::new(dialog));
