@@ -14,6 +14,7 @@ use crate::clients::ClientId;
 pub struct ScanResult {
     pub files: [Vec<PathBuf>; ClientId::COUNT],
     pub opencode_db: Option<PathBuf>,
+    pub synthetic_db: Option<PathBuf>,
     /// Path to the OpenCode legacy JSON directory (for migration cache stat checks)
     pub opencode_json_dir: Option<PathBuf>,
 }
@@ -23,6 +24,7 @@ impl Default for ScanResult {
         Self {
             files: std::array::from_fn(|_| Vec::new()),
             opencode_db: None,
+            synthetic_db: None,
             opencode_json_dir: None,
         }
     }
@@ -132,6 +134,7 @@ pub fn scan_directory(root: &str, pattern: &str) -> Vec<PathBuf> {
                 "*.settings.json" => file_name.ends_with(".settings.json"),
                 "sessions.json" => file_name == "sessions.json",
                 "wire.jsonl" => file_name == "wire.jsonl",
+                "ui_messages.json" => file_name == "ui_messages.json",
                 _ => false,
             }
         })
@@ -143,7 +146,10 @@ pub fn scan_directory(root: &str, pattern: &str) -> Vec<PathBuf> {
 pub fn scan_all_clients(home_dir: &str, clients: &[String]) -> ScanResult {
     let mut result = ScanResult::default();
 
-    let enabled: HashSet<ClientId> = if clients.is_empty() {
+    let include_all = clients.is_empty();
+    let include_synthetic = include_all || clients.iter().any(|s| s == "synthetic");
+
+    let enabled: HashSet<ClientId> = if include_all || include_synthetic {
         ClientId::iter().collect()
     } else {
         clients
@@ -160,7 +166,11 @@ pub fn scan_all_clients(home_dir: &str, clients: &[String]) -> ScanResult {
     for client_id in &enabled {
         if matches!(
             client_id,
-            ClientId::OpenCode | ClientId::Codex | ClientId::OpenClaw
+            ClientId::OpenCode
+                | ClientId::Codex
+                | ClientId::OpenClaw
+                | ClientId::RooCode
+                | ClientId::KiloCode
         ) {
             continue;
         }
@@ -242,6 +252,53 @@ pub fn scan_all_clients(home_dir: &str, clients: &[String]) -> ScanResult {
             ClientId::OpenClaw,
             moldbot_path,
             ClientId::OpenClaw.data().pattern,
+        ));
+    }
+
+    if include_synthetic {
+        let xdg_data =
+            std::env::var("XDG_DATA_HOME").unwrap_or_else(|_| format!("{}/.local/share", home_dir));
+        let octofriend_db_path = PathBuf::from(format!("{}/octofriend/sqlite.db", xdg_data));
+        if octofriend_db_path.exists() {
+            result.synthetic_db = Some(octofriend_db_path);
+        }
+    }
+
+    if enabled.contains(&ClientId::RooCode) {
+        let local_path = ClientId::RooCode.data().resolve_path(home_dir);
+        tasks.push((
+            ClientId::RooCode,
+            local_path,
+            ClientId::RooCode.data().pattern,
+        ));
+
+        let server_path = format!(
+            "{}/.vscode-server/data/User/globalStorage/rooveterinaryinc.roo-cline/tasks",
+            home_dir
+        );
+        tasks.push((
+            ClientId::RooCode,
+            server_path,
+            ClientId::RooCode.data().pattern,
+        ));
+    }
+
+    if enabled.contains(&ClientId::KiloCode) {
+        let local_path = ClientId::KiloCode.data().resolve_path(home_dir);
+        tasks.push((
+            ClientId::KiloCode,
+            local_path,
+            ClientId::KiloCode.data().pattern,
+        ));
+
+        let server_path = format!(
+            "{}/.vscode-server/data/User/globalStorage/kilocode.kilo-code/tasks",
+            home_dir
+        );
+        tasks.push((
+            ClientId::KiloCode,
+            server_path,
+            ClientId::KiloCode.data().pattern,
         ));
     }
 
@@ -390,6 +447,30 @@ mod tests {
     }
 
     #[test]
+    fn test_scan_directory_ui_messages_pattern() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path();
+
+        let tasks = path.join("tasks");
+        fs::create_dir_all(tasks.join("task-a")).unwrap();
+        fs::create_dir_all(tasks.join("task-b")).unwrap();
+        fs::create_dir_all(tasks.join("task-c")).unwrap();
+
+        File::create(tasks.join("task-a").join("ui_messages.json")).unwrap();
+        File::create(tasks.join("task-b").join("ui_messages.json")).unwrap();
+        File::create(tasks.join("task-c").join("api_conversation_history.json")).unwrap();
+
+        let files = scan_directory(path.to_str().unwrap(), "ui_messages.json");
+        assert_eq!(files.len(), 2);
+        assert!(files.iter().all(|p| {
+            p.file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or_default()
+                == "ui_messages.json"
+        }));
+    }
+
+    #[test]
     fn test_scan_directory_nested() {
         let dir = TempDir::new().unwrap();
         let path = dir.path();
@@ -496,6 +577,29 @@ mod tests {
         // Even if an index exists, we should count JSONL transcripts (not sessions.json only)
         let mut index = File::create(openclaw_sessions.join("sessions.json")).unwrap();
         index.write_all(b"{}").unwrap();
+    }
+
+    fn setup_mock_roocode_dir(base: &std::path::Path) {
+        let local = base
+            .join(".config/Code/User/globalStorage/rooveterinaryinc.roo-cline/tasks/task-local");
+        let server = base.join(
+            ".vscode-server/data/User/globalStorage/rooveterinaryinc.roo-cline/tasks/task-server",
+        );
+        fs::create_dir_all(&local).unwrap();
+        fs::create_dir_all(&server).unwrap();
+        File::create(local.join("ui_messages.json")).unwrap();
+        File::create(server.join("ui_messages.json")).unwrap();
+    }
+
+    fn setup_mock_kilocode_dir(base: &std::path::Path) {
+        let local =
+            base.join(".config/Code/User/globalStorage/kilocode.kilo-code/tasks/task-local");
+        let server = base
+            .join(".vscode-server/data/User/globalStorage/kilocode.kilo-code/tasks/task-server");
+        fs::create_dir_all(&local).unwrap();
+        fs::create_dir_all(&server).unwrap();
+        File::create(local.join("ui_messages.json")).unwrap();
+        File::create(server.join("ui_messages.json")).unwrap();
     }
 
     #[test]
@@ -715,5 +819,33 @@ mod tests {
         assert!(result.get(ClientId::Kimi)[0].ends_with("wire.jsonl"));
         assert!(result.get(ClientId::OpenCode).is_empty());
         assert!(result.get(ClientId::Claude).is_empty());
+    }
+
+    #[test]
+    fn test_scan_all_clients_roocode() {
+        let dir = TempDir::new().unwrap();
+        let home = dir.path();
+        setup_mock_roocode_dir(home);
+
+        let result = scan_all_clients(home.to_str().unwrap(), &["roocode".to_string()]);
+        assert_eq!(result.get(ClientId::RooCode).len(), 2);
+        assert!(result
+            .get(ClientId::RooCode)
+            .iter()
+            .all(|p| p.ends_with("ui_messages.json")));
+    }
+
+    #[test]
+    fn test_scan_all_clients_kilocode() {
+        let dir = TempDir::new().unwrap();
+        let home = dir.path();
+        setup_mock_kilocode_dir(home);
+
+        let result = scan_all_clients(home.to_str().unwrap(), &["kilocode".to_string()]);
+        assert_eq!(result.get(ClientId::KiloCode).len(), 2);
+        assert!(result
+            .get(ClientId::KiloCode)
+            .iter()
+            .all(|p| p.ends_with("ui_messages.json")));
     }
 }

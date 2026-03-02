@@ -296,6 +296,8 @@ fn parse_all_messages_with_pricing(
 ) -> Vec<UnifiedMessage> {
     let scan_result = scanner::scan_all_clients(home_dir, clients);
     let mut all_messages: Vec<UnifiedMessage> = Vec::new();
+    let include_all = clients.is_empty();
+    let include_synthetic = include_all || clients.iter().any(|c| c == "synthetic");
 
     // Parse OpenCode: read both SQLite (1.2+) and legacy JSON, deduplicate by message ID
     let mut opencode_seen: HashSet<String> = HashSet::new();
@@ -585,6 +587,92 @@ fn parse_all_messages_with_pricing(
         .collect();
     all_messages.extend(qwen_messages);
 
+    let roocode_messages: Vec<UnifiedMessage> = scan_result
+        .get(ClientId::RooCode)
+        .par_iter()
+        .flat_map(|path| {
+            sessions::roocode::parse_roocode_file(path)
+                .into_iter()
+                .map(|mut msg| {
+                    msg.cost = pricing.calculate_cost(
+                        &msg.model_id,
+                        msg.tokens.input,
+                        msg.tokens.output,
+                        msg.tokens.cache_read,
+                        msg.tokens.cache_write,
+                        msg.tokens.reasoning,
+                    );
+                    msg
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    all_messages.extend(roocode_messages);
+
+    let kilocode_messages: Vec<UnifiedMessage> = scan_result
+        .get(ClientId::KiloCode)
+        .par_iter()
+        .flat_map(|path| {
+            sessions::kilocode::parse_kilocode_file(path)
+                .into_iter()
+                .map(|mut msg| {
+                    msg.cost = pricing.calculate_cost(
+                        &msg.model_id,
+                        msg.tokens.input,
+                        msg.tokens.output,
+                        msg.tokens.cache_read,
+                        msg.tokens.cache_write,
+                        msg.tokens.reasoning,
+                    );
+                    msg
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    all_messages.extend(kilocode_messages);
+
+    if include_synthetic {
+        if let Some(db_path) = &scan_result.synthetic_db {
+            let synthetic_messages: Vec<UnifiedMessage> =
+                sessions::synthetic::parse_octofriend_sqlite(db_path)
+                    .into_iter()
+                    .map(|mut msg| {
+                        msg.cost = pricing.calculate_cost(
+                            &msg.model_id,
+                            msg.tokens.input,
+                            msg.tokens.output,
+                            msg.tokens.cache_read,
+                            msg.tokens.cache_write,
+                            msg.tokens.reasoning,
+                        );
+                        msg
+                    })
+                    .collect();
+            all_messages.extend(synthetic_messages);
+        }
+
+        for msg in &mut all_messages {
+            if msg.client == "synthetic" {
+                continue;
+            }
+
+            if sessions::synthetic::is_synthetic_model(&msg.model_id)
+                || sessions::synthetic::is_synthetic_provider(&msg.provider_id)
+            {
+                msg.client = "synthetic".to_string();
+                msg.model_id = sessions::synthetic::normalize_synthetic_model(&msg.model_id);
+                if msg.provider_id.is_empty() || msg.provider_id == "unknown" {
+                    msg.provider_id = "synthetic".to_string();
+                }
+            }
+        }
+    }
+
+    if !include_all {
+        let requested: HashSet<&str> = clients.iter().map(String::as_str).collect();
+        all_messages.retain(|msg| requested.contains(msg.client.as_str()));
+    }
+
     all_messages
 }
 
@@ -594,10 +682,12 @@ pub async fn get_model_report(options: ReportOptions) -> Result<ModelReport, Str
     let home_dir = get_home_dir_string(&options.home_dir)?;
 
     let clients: Vec<String> = options.clients.clone().unwrap_or_else(|| {
-        ClientId::ALL
+        let mut clients: Vec<String> = ClientId::ALL
             .iter()
             .map(|c| c.as_str().to_string())
-            .collect()
+            .collect();
+        clients.push("synthetic".to_string());
+        clients
     });
 
     let pricing = pricing::PricingService::get_or_init().await?;
@@ -719,10 +809,12 @@ pub async fn get_monthly_report(options: ReportOptions) -> Result<MonthlyReport,
     let home_dir = get_home_dir_string(&options.home_dir)?;
 
     let clients: Vec<String> = options.clients.clone().unwrap_or_else(|| {
-        ClientId::ALL
+        let mut clients: Vec<String> = ClientId::ALL
             .iter()
             .map(|c| c.as_str().to_string())
-            .collect()
+            .collect();
+        clients.push("synthetic".to_string());
+        clients
     });
 
     let pricing = pricing::PricingService::get_or_init().await?;
@@ -783,10 +875,12 @@ pub async fn generate_graph(options: ReportOptions) -> Result<GraphResult, Strin
     let home_dir = get_home_dir_string(&options.home_dir)?;
 
     let clients: Vec<String> = options.clients.clone().unwrap_or_else(|| {
-        ClientId::ALL
+        let mut clients: Vec<String> = ClientId::ALL
             .iter()
             .map(|c| c.as_str().to_string())
-            .collect()
+            .collect();
+        clients.push("synthetic".to_string());
+        clients
     });
 
     let pricing = pricing::PricingService::get_or_init().await?;
@@ -840,11 +934,15 @@ pub fn parse_local_clients(options: LocalParseOptions) -> Result<ParsedMessages,
     let home_dir = get_home_dir_string(&options.home_dir)?;
 
     let clients: Vec<String> = options.clients.clone().unwrap_or_else(|| {
-        ClientId::iter()
+        let mut clients: Vec<String> = ClientId::iter()
             .filter(|c| c.parse_local())
             .map(|c| c.as_str().to_string())
-            .collect()
+            .collect();
+        clients.push("synthetic".to_string());
+        clients
     });
+    let include_all = clients.is_empty();
+    let include_synthetic = include_all || clients.iter().any(|c| c == "synthetic");
 
     let scan_result = scanner::scan_all_clients(&home_dir, &clients);
     let headless_roots = scanner::headless_roots(&home_dir);
@@ -1038,6 +1136,84 @@ pub fn parse_local_clients(options: LocalParseOptions) -> Result<ParsedMessages,
     let qwen_count = qwen_msgs.len() as i32;
     counts.set(ClientId::Qwen, qwen_count);
     messages.extend(qwen_msgs);
+
+    let roocode_msgs: Vec<ParsedMessage> = scan_result
+        .get(ClientId::RooCode)
+        .par_iter()
+        .flat_map(|path| {
+            sessions::roocode::parse_roocode_file(path)
+                .into_iter()
+                .map(|msg| unified_to_parsed(&msg))
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    let roocode_count = roocode_msgs.len() as i32;
+    counts.set(ClientId::RooCode, roocode_count);
+    messages.extend(roocode_msgs);
+
+    let kilocode_msgs: Vec<ParsedMessage> = scan_result
+        .get(ClientId::KiloCode)
+        .par_iter()
+        .flat_map(|path| {
+            sessions::kilocode::parse_kilocode_file(path)
+                .into_iter()
+                .map(|msg| unified_to_parsed(&msg))
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    let kilocode_count = kilocode_msgs.len() as i32;
+    counts.set(ClientId::KiloCode, kilocode_count);
+    messages.extend(kilocode_msgs);
+
+    let mut synthetic_count: i32 = 0;
+    if include_synthetic {
+        if let Some(db_path) = &scan_result.synthetic_db {
+            let synthetic_msgs: Vec<ParsedMessage> =
+                sessions::synthetic::parse_octofriend_sqlite(db_path)
+                    .into_iter()
+                    .map(|msg| unified_to_parsed(&msg))
+                    .collect();
+            synthetic_count += synthetic_msgs.len() as i32;
+            messages.extend(synthetic_msgs);
+        }
+
+        let mut deltas = [0_i32; ClientId::COUNT];
+        for msg in &mut messages {
+            if msg.client == "synthetic" {
+                continue;
+            }
+
+            if sessions::synthetic::is_synthetic_model(&msg.model_id)
+                || sessions::synthetic::is_synthetic_provider(&msg.provider_id)
+            {
+                if let Some(client_id) = ClientId::from_str(&msg.client) {
+                    deltas[client_id as usize] += 1;
+                }
+
+                msg.client = "synthetic".to_string();
+                msg.model_id = sessions::synthetic::normalize_synthetic_model(&msg.model_id);
+                if msg.provider_id.is_empty() || msg.provider_id == "unknown" {
+                    msg.provider_id = "synthetic".to_string();
+                }
+
+                synthetic_count += 1;
+            }
+        }
+
+        for client_id in ClientId::iter() {
+            let delta = deltas[client_id as usize];
+            if delta > 0 {
+                counts.add(client_id, -delta);
+            }
+        }
+    }
+
+    if !include_all {
+        let requested: HashSet<&str> = clients.iter().map(String::as_str).collect();
+        messages.retain(|msg| requested.contains(msg.client.as_str()));
+    }
+
+    let _ = synthetic_count;
 
     let filtered = filter_parsed_messages(messages, &options);
 

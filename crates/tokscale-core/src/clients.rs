@@ -195,6 +195,22 @@ define_clients!(
         pattern: "*.jsonl",
         headless: false,
         parse_local: true
+    },
+    RooCode = 11 => {
+        id: "roocode",
+        root: PathRoot::Home,
+        relative: ".config/Code/User/globalStorage/rooveterinaryinc.roo-cline/tasks",
+        pattern: "ui_messages.json",
+        headless: false,
+        parse_local: true
+    },
+    KiloCode = 12 => {
+        id: "kilocode",
+        root: PathRoot::Home,
+        relative: ".config/Code/User/globalStorage/kilocode.kilo-code/tasks",
+        pattern: "ui_messages.json",
+        headless: false,
+        parse_local: true
     }
 );
 
@@ -246,8 +262,8 @@ mod tests {
     }
 
     #[test]
-    fn test_client_id_count_is_eleven() {
-        assert_eq!(ClientId::COUNT, 11);
+    fn test_client_id_count() {
+        assert_eq!(ClientId::COUNT, 13);
     }
 
     #[test]

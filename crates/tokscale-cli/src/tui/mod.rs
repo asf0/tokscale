@@ -289,6 +289,9 @@ pub fn test_data_loading() -> Result<()> {
         ClientId::OpenClaw,
         ClientId::Pi,
         ClientId::Kimi,
+        ClientId::Qwen,
+        ClientId::RooCode,
+        ClientId::KiloCode,
     ];
 
     let data = loader.load(&all_clients, &tokscale_core::GroupBy::default())?;

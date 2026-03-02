@@ -72,6 +72,12 @@ struct Cli {
     #[arg(long, help = "Show only Qwen CLI usage")]
     qwen: bool,
 
+    #[arg(long, help = "Show only Roo Code usage")]
+    roocode: bool,
+
+    #[arg(long, help = "Show only KiloCode usage")]
+    kilocode: bool,
+
     #[arg(long, help = "Show only today's usage")]
     today: bool,
 
@@ -135,6 +141,10 @@ enum Commands {
         kimi: bool,
         #[arg(long, help = "Show only Qwen CLI usage")]
         qwen: bool,
+        #[arg(long, help = "Show only Roo Code usage")]
+        roocode: bool,
+        #[arg(long, help = "Show only KiloCode usage")]
+        kilocode: bool,
         #[arg(long, help = "Show only today's usage")]
         today: bool,
         #[arg(long, help = "Show last 7 days")]
@@ -187,6 +197,10 @@ enum Commands {
         kimi: bool,
         #[arg(long, help = "Show only Qwen CLI usage")]
         qwen: bool,
+        #[arg(long, help = "Show only Roo Code usage")]
+        roocode: bool,
+        #[arg(long, help = "Show only KiloCode usage")]
+        kilocode: bool,
         #[arg(long, help = "Show only today's usage")]
         today: bool,
         #[arg(long, help = "Show last 7 days")]
@@ -251,6 +265,10 @@ enum Commands {
         kimi: bool,
         #[arg(long, help = "Show only Qwen CLI usage")]
         qwen: bool,
+        #[arg(long, help = "Show only Roo Code usage")]
+        roocode: bool,
+        #[arg(long, help = "Show only KiloCode usage")]
+        kilocode: bool,
         #[arg(long, help = "Show only today's usage")]
         today: bool,
         #[arg(long, help = "Show last 7 days")]
@@ -292,6 +310,10 @@ enum Commands {
         kimi: bool,
         #[arg(long, help = "Show only Qwen CLI usage")]
         qwen: bool,
+        #[arg(long, help = "Show only Roo Code usage")]
+        roocode: bool,
+        #[arg(long, help = "Show only KiloCode usage")]
+        kilocode: bool,
         #[arg(long, help = "Show only today's usage")]
         today: bool,
         #[arg(long, help = "Show last 7 days")]
@@ -329,6 +351,10 @@ enum Commands {
         kimi: bool,
         #[arg(long, help = "Include only Qwen CLI data")]
         qwen: bool,
+        #[arg(long, help = "Show only Roo Code usage")]
+        roocode: bool,
+        #[arg(long, help = "Show only KiloCode usage")]
+        kilocode: bool,
         #[arg(long, help = "Submit only today's usage")]
         today: bool,
         #[arg(long, help = "Submit last 7 days")]
@@ -388,6 +414,10 @@ enum Commands {
         kimi: bool,
         #[arg(long, help = "Show only Qwen CLI usage")]
         qwen: bool,
+        #[arg(long, help = "Show only Roo Code usage")]
+        roocode: bool,
+        #[arg(long, help = "Show only KiloCode usage")]
+        kilocode: bool,
         #[arg(
             long,
             help = "Display total tokens in abbreviated format (e.g., 7.14B)"
@@ -467,6 +497,8 @@ fn main() -> Result<()> {
             pi,
             kimi,
             qwen,
+            roocode,
+            kilocode,
             today,
             week,
             month,
@@ -495,6 +527,8 @@ fn main() -> Result<()> {
                 pi,
                 kimi,
                 qwen,
+                roocode,
+                kilocode,
             });
             let (since, until) = build_date_filter(today, week, month, since, until);
             let year = normalize_year_filter(today, week, month, year);
@@ -539,6 +573,8 @@ fn main() -> Result<()> {
             pi,
             kimi,
             qwen,
+            roocode,
+            kilocode,
             today,
             week,
             month,
@@ -560,6 +596,8 @@ fn main() -> Result<()> {
                 pi,
                 kimi,
                 qwen,
+                roocode,
+                kilocode,
             });
             let (since, until) = build_date_filter(today, week, month, since, until);
             let year = normalize_year_filter(today, week, month, year);
@@ -612,6 +650,8 @@ fn main() -> Result<()> {
             pi,
             kimi,
             qwen,
+            roocode,
+            kilocode,
             today,
             week,
             month,
@@ -633,6 +673,8 @@ fn main() -> Result<()> {
                 pi,
                 kimi,
                 qwen,
+                roocode,
+                kilocode,
             });
             let (since, until) = build_date_filter(today, week, month, since, until);
             let year = normalize_year_filter(today, week, month, year);
@@ -650,6 +692,8 @@ fn main() -> Result<()> {
             pi,
             kimi,
             qwen,
+            roocode,
+            kilocode,
             today,
             week,
             month,
@@ -669,6 +713,8 @@ fn main() -> Result<()> {
                 pi,
                 kimi,
                 qwen,
+                roocode,
+                kilocode,
             });
             let (since, until) = build_date_filter(today, week, month, since, until);
             let year = normalize_year_filter(today, week, month, year);
@@ -695,6 +741,8 @@ fn main() -> Result<()> {
             pi,
             kimi,
             qwen,
+            roocode,
+            kilocode,
             today,
             week,
             month,
@@ -715,6 +763,8 @@ fn main() -> Result<()> {
                 pi,
                 kimi,
                 qwen,
+                roocode,
+                kilocode,
             });
             let (since, until) = build_date_filter(today, week, month, since, until);
             let year = normalize_year_filter(today, week, month, year);
@@ -741,6 +791,8 @@ fn main() -> Result<()> {
             pi,
             kimi,
             qwen,
+            roocode,
+            kilocode,
             short,
             agents,
             clients,
@@ -759,6 +811,8 @@ fn main() -> Result<()> {
                 pi,
                 kimi,
                 qwen,
+                roocode,
+                kilocode,
             });
             run_wrapped_command(
                 output,
@@ -784,6 +838,8 @@ fn main() -> Result<()> {
                 pi: cli.pi,
                 kimi: cli.kimi,
                 qwen: cli.qwen,
+                roocode: cli.roocode,
+                kilocode: cli.kilocode,
             });
             let (since, until) =
                 build_date_filter(cli.today, cli.week, cli.month, cli.since, cli.until);
@@ -849,6 +905,8 @@ struct ClientFlags {
     pi: bool,
     kimi: bool,
     qwen: bool,
+    roocode: bool,
+    kilocode: bool,
 }
 
 fn build_client_filter(flags: ClientFlags) -> Option<Vec<String>> {
@@ -866,6 +924,8 @@ fn build_client_filter(flags: ClientFlags) -> Option<Vec<String>> {
         (ClientId::Pi, flags.pi),
         (ClientId::Kimi, flags.kimi),
         (ClientId::Qwen, flags.qwen),
+        (ClientId::RooCode, flags.roocode),
+        (ClientId::KiloCode, flags.kilocode),
     ]
     .into_iter()
     .filter(|(_, enabled)| *enabled)
@@ -2443,11 +2503,65 @@ fn run_whoami_command() -> Result<()> {
     auth::whoami()
 }
 
-fn prompt_star_repo() -> Result<()> {
+#[derive(serde::Serialize, serde::Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct StarCache {
+    #[serde(default)]
+    username: String,
+    #[serde(default)]
+    has_starred: bool,
+    #[serde(default)]
+    checked_at: String,
+}
+
+fn star_cache_path() -> Option<PathBuf> {
+    dirs::config_dir().map(|d| d.join("tokscale").join("star-cache.json"))
+}
+
+fn load_star_cache(username: &str) -> Option<StarCache> {
+    let path = star_cache_path()?;
+    let content = std::fs::read_to_string(path).ok()?;
+    let cache: StarCache = serde_json::from_str(&content).ok()?;
+    // Must match username and have hasStarred=true
+    if cache.username != username || !cache.has_starred {
+        return None;
+    }
+    Some(cache)
+}
+
+fn save_star_cache(username: &str, has_starred: bool) {
+    // Only cache positive confirmations (matching v1 behavior)
+    if !has_starred {
+        return;
+    }
+    let Some(path) = star_cache_path() else {
+        return;
+    };
+    let now = chrono::Utc::now().to_rfc3339();
+    let cache = StarCache {
+        username: username.to_string(),
+        has_starred,
+        checked_at: now,
+    };
+    if let Ok(content) = serde_json::to_string_pretty(&cache) {
+        if let Some(dir) = path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let _ = std::fs::write(&path, content);
+    }
+}
+
+fn prompt_star_repo(username: &str) -> Result<()> {
     use colored::Colorize;
     use std::io::{self, Write};
     use std::process::Command;
 
+    // Check local cache first (avoids network call)
+    if load_star_cache(username).is_some() {
+        return Ok(());
+    }
+
+    // Check if gh CLI is available
     let gh_available = Command::new("gh")
         .arg("--version")
         .output()
@@ -2458,35 +2572,67 @@ fn prompt_star_repo() -> Result<()> {
         return Ok(());
     }
 
+    // Check if user has already starred via gh API
+    // Returns exit 0 (HTTP 204) if starred, non-zero (HTTP 404) if not
+    let already_starred = Command::new("gh")
+        .args(["api", "/user/starred/junhoyeo/tokscale"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+
+    if already_starred {
+        save_star_cache(username, true);
+        return Ok(());
+    }
+
+    println!();
+    println!("{}", "  Help us grow! \u{2b50}".cyan());
     println!(
         "{}",
-        "  Please consider starring tokscale on GitHub!".bright_black()
+        "  Starring bunx tokscale@latest helps others discover the project.\n".bright_black()
     );
-    print!("  Star now with gh CLI? [y/N]: ");
+    print!(
+        "{}",
+        "  \u{2b50} Would you like to star tokscale? (Y/n): ".white()
+    );
     io::stdout().flush()?;
 
     let mut input = String::new();
     io::stdin().read_line(&mut input)?;
     let answer = input.trim().to_lowercase();
-    if answer != "y" && answer != "yes" {
+    if answer == "n" || answer == "no" {
+        // Decline: don't cache (will re-prompt next time, matching v1)
         println!();
         return Ok(());
     }
 
+    // Star via gh API (gh repo star is not a valid command)
     let status = Command::new("gh")
-        .args(["repo", "star", "junhoyeo/tokscale"])
+        .args([
+            "api",
+            "--silent",
+            "--method",
+            "PUT",
+            "/user/starred/junhoyeo/tokscale",
+        ])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
         .status();
     match status {
         Ok(s) if s.success() => {
-            println!("{}", "  ✓ Starred! Thank you for your support.".green());
-            println!();
+            println!(
+                "{}",
+                "  \u{2713} Starred! Thank you for your support.\n".green()
+            );
+            save_star_cache(username, true);
         }
         _ => {
             println!(
                 "{}",
-                "  Failed to star via gh CLI. Continuing to submit...".yellow()
+                "  Failed to star via gh CLI. Continuing to submit...\n".yellow()
             );
-            println!();
         }
     }
 
@@ -2646,7 +2792,7 @@ fn run_submit_command(
     };
 
     if std::io::stdin().is_terminal() && std::io::stdout().is_terminal() {
-        let _ = prompt_star_repo();
+        let _ = prompt_star_repo(&credentials.username);
     }
 
     println!("\n  {}\n", "Tokscale - Submit Usage Data".cyan());
@@ -3069,6 +3215,8 @@ mod tests {
             pi: false,
             kimi: false,
             qwen: false,
+            roocode: false,
+            kilocode: false,
         };
         assert_eq!(build_client_filter(flags), None);
     }
@@ -3087,6 +3235,8 @@ mod tests {
             pi: false,
             kimi: false,
             qwen: false,
+            roocode: false,
+            kilocode: false,
         };
         assert_eq!(
             build_client_filter(flags),
@@ -3108,6 +3258,8 @@ mod tests {
             pi: true,
             kimi: false,
             qwen: false,
+            roocode: false,
+            kilocode: false,
         };
         assert_eq!(
             build_client_filter(flags),
@@ -3133,11 +3285,13 @@ mod tests {
             pi: true,
             kimi: true,
             qwen: true,
+            roocode: true,
+            kilocode: true,
         };
         let result = build_client_filter(flags);
         assert!(result.is_some());
         let sources = result.unwrap();
-        assert_eq!(sources.len(), 11);
+        assert_eq!(sources.len(), 13);
         assert!(sources.contains(&"opencode".to_string()));
         assert!(sources.contains(&"claude".to_string()));
         assert!(sources.contains(&"codex".to_string()));
@@ -3149,6 +3303,8 @@ mod tests {
         assert!(sources.contains(&"pi".to_string()));
         assert!(sources.contains(&"kimi".to_string()));
         assert!(sources.contains(&"qwen".to_string()));
+        assert!(sources.contains(&"roocode".to_string()));
+        assert!(sources.contains(&"kilocode".to_string()));
     }
 
     #[test]

@@ -33,6 +33,7 @@ const SUPPORTED_SOURCES = [
   "qwen",
   "roocode",
   "kilocode",
+  "synthetic",
 ] as const;
 const SourceSchema = z.enum(SUPPORTED_SOURCES);
 
@@ -159,8 +160,8 @@ export function validateSubmission(data: unknown): ValidationResult {
   if (!parseResult.success) {
     return {
       valid: false,
-      errors: parseResult.error.errors.map(
-        (e) => `${e.path.join(".")}: ${e.message}`
+      errors: parseResult.error.issues.map(
+        (e: z.ZodIssue) => `${e.path.join(".")}: ${e.message}`
       ),
       warnings: [],
     };

@@ -248,6 +248,22 @@ impl DataLoader {
                         .collect();
                     all_messages.extend(msgs);
                 }
+                ClientId::RooCode => {
+                    let msgs: Vec<UnifiedMessage> = scan_result
+                        .get(ClientId::RooCode)
+                        .par_iter()
+                        .flat_map(|path| sessions::roocode::parse_roocode_file(path))
+                        .collect();
+                    all_messages.extend(msgs);
+                }
+                ClientId::KiloCode => {
+                    let msgs: Vec<UnifiedMessage> = scan_result
+                        .get(ClientId::KiloCode)
+                        .par_iter()
+                        .flat_map(|path| sessions::kilocode::parse_kilocode_file(path))
+                        .collect();
+                    all_messages.extend(msgs);
+                }
             }
         }
 
@@ -633,7 +649,7 @@ mod tests {
     #[test]
     fn test_client_all() {
         let clients = ClientId::ALL;
-        assert_eq!(clients.len(), 11);
+        assert_eq!(clients.len(), 13);
         assert_eq!(clients[0], ClientId::OpenCode);
         assert_eq!(clients[1], ClientId::Claude);
         assert_eq!(clients[2], ClientId::Codex);
@@ -644,6 +660,9 @@ mod tests {
         assert_eq!(clients[7], ClientId::OpenClaw);
         assert_eq!(clients[8], ClientId::Pi);
         assert_eq!(clients[9], ClientId::Kimi);
+        assert_eq!(clients[10], ClientId::Qwen);
+        assert_eq!(clients[11], ClientId::RooCode);
+        assert_eq!(clients[12], ClientId::KiloCode);
     }
 
     #[test]
@@ -679,6 +698,15 @@ mod tests {
         );
         assert_eq!(crate::tui::client_ui::display_name(ClientId::Pi), "Pi");
         assert_eq!(crate::tui::client_ui::display_name(ClientId::Kimi), "Kimi");
+        assert_eq!(crate::tui::client_ui::display_name(ClientId::Qwen), "Qwen");
+        assert_eq!(
+            crate::tui::client_ui::display_name(ClientId::RooCode),
+            "Roo Code"
+        );
+        assert_eq!(
+            crate::tui::client_ui::display_name(ClientId::KiloCode),
+            "KiloCode"
+        );
     }
 
     #[test]
@@ -693,6 +721,9 @@ mod tests {
         assert_eq!(crate::tui::client_ui::hotkey(ClientId::OpenClaw), '8');
         assert_eq!(crate::tui::client_ui::hotkey(ClientId::Pi), '9');
         assert_eq!(crate::tui::client_ui::hotkey(ClientId::Kimi), '0');
+        assert_eq!(crate::tui::client_ui::hotkey(ClientId::Qwen), 'w');
+        assert_eq!(crate::tui::client_ui::hotkey(ClientId::RooCode), 'r');
+        assert_eq!(crate::tui::client_ui::hotkey(ClientId::KiloCode), 'k');
     }
 
     #[test]
@@ -730,6 +761,18 @@ mod tests {
         assert_eq!(
             crate::tui::client_ui::from_hotkey('0'),
             Some(ClientId::Kimi)
+        );
+        assert_eq!(
+            crate::tui::client_ui::from_hotkey('w'),
+            Some(ClientId::Qwen)
+        );
+        assert_eq!(
+            crate::tui::client_ui::from_hotkey('r'),
+            Some(ClientId::RooCode)
+        );
+        assert_eq!(
+            crate::tui::client_ui::from_hotkey('k'),
+            Some(ClientId::KiloCode)
         );
         assert_eq!(crate::tui::client_ui::from_hotkey('a'), None);
     }
