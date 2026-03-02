@@ -833,6 +833,7 @@ const MODEL_COLORS: Record<string, string> = {
   "deepseek": "#06B6D4",
   "codex": "#F59E0B",
   "kimi": "#A855F7",
+  "qwen": "#1A73E8",
 };
 
 function getModelColor(modelName: string): string {

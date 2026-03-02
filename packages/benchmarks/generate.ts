@@ -2,7 +2,7 @@
 /**
  * Synthetic Data Generator for Benchmarks
  * 
- * Generates realistic test data for all 4 session sources:
+ * Generates realistic test data for all 4 session clients:
  * - OpenCode: Individual JSON files
  * - Claude Code: JSONL files
  * - Codex CLI: JSONL files with token_count events
@@ -559,7 +559,7 @@ function main() {
   }
   ensureDir(config.outputDir);
   
-  // Generate data for each source
+  // Generate data for each client
   generateOpenCodeData(config);
   generateClaudeData(config);
   generateCodexData(config);

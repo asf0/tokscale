@@ -39,7 +39,7 @@
   --color-btn-selected-bg: #111113;
   --color-badge-bg: rgba(133, 202, 255, 0.15);
   --color-badge-text: #85CAFF;
-  --background: #10121C;
+  --background: #000;
   --foreground: #FFFFFF;
 }
 
@@ -77,9 +77,6 @@ a:hover {
 .border-default { border-color: var(--color-border-default); }
 .border-subtle { border-color: var(--color-border-subtle); }
 
-#__primerPortalRoot__ { 
-  z-index: 100 !important;
-}
 
 .main-container {
   flex: 1;

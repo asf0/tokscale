@@ -22,11 +22,6 @@ permissions:
   contents: write
   pull-requests: read
 
-env:
-  DEBUG: napi:*
-  APP_NAME: tokscale-core
-  MACOSX_DEPLOYMENT_TARGET: "10.13"
-
 jobs:
   bump-versions:
     name: Bump versions
@@ -39,8 +34,8 @@ jobs:
       - name: Calculate version
         id: bump
         run: |
-          # Read current version
-          CURRENT_VERSION=$(jq -r '.version' packages/core/package.json)
+          # Read current version from packages/cli/package.json (source of truth)
+          CURRENT_VERSION=$(jq -r '.version' packages/cli/package.json)
           echo "📦 Current version: $CURRENT_VERSION"
           
           # Calculate new version
@@ -67,24 +62,31 @@ jobs:
           fi
           echo "🚀 New version: $NEW_VERSION"
           
-          # Update packages/core/package.json (version + optionalDependencies versions)
-          jq --arg v "$NEW_VERSION" '
-            .version = $v |
-            .optionalDependencies = (.optionalDependencies | to_entries | map(.value = $v) | from_entries)
-          ' packages/core/package.json > tmp.json && mv tmp.json packages/core/package.json
-          echo "✅ Updated packages/core/package.json"
-          
-          # Update all platform package.json files in npm/
-          for dir in packages/core/npm/*/; do
-            if [ -f "${dir}package.json" ]; then
-              jq --arg v "$NEW_VERSION" '.version = $v' "${dir}package.json" > tmp.json && mv tmp.json "${dir}package.json"
-              echo "✅ Updated ${dir}package.json"
-            fi
-          done
-          
-          # Update packages/cli/package.json (version + @tokscale/core dependency)
-          jq --arg v "$NEW_VERSION" '.version = $v | .dependencies["@tokscale/core"] = $v' packages/cli/package.json > tmp.json && mv tmp.json packages/cli/package.json
+          # Update packages/cli/package.json (version + platform optionalDependencies)
+          jq --arg v "$NEW_VERSION" '.version = $v
+            | .optionalDependencies["@tokscale/cli-darwin-arm64"] = $v
+            | .optionalDependencies["@tokscale/cli-darwin-x64"] = $v
+            | .optionalDependencies["@tokscale/cli-linux-x64-gnu"] = $v
+            | .optionalDependencies["@tokscale/cli-linux-x64-musl"] = $v
+            | .optionalDependencies["@tokscale/cli-linux-arm64-gnu"] = $v
+            | .optionalDependencies["@tokscale/cli-linux-arm64-musl"] = $v
+            | .optionalDependencies["@tokscale/cli-win32-x64-msvc"] = $v
+            | .optionalDependencies["@tokscale/cli-win32-arm64-msvc"] = $v' packages/cli/package.json > tmp.json && mv tmp.json packages/cli/package.json
           echo "✅ Updated packages/cli/package.json"
+
+          # Update platform package versions
+          for pkg in \
+            cli-darwin-arm64 \
+            cli-darwin-x64 \
+            cli-linux-x64-gnu \
+            cli-linux-x64-musl \
+            cli-linux-arm64-gnu \
+            cli-linux-arm64-musl \
+            cli-win32-x64-msvc \
+            cli-win32-arm64-msvc; do
+            jq --arg v "$NEW_VERSION" '.version = $v' "packages/$pkg/package.json" > tmp.json && mv tmp.json "packages/$pkg/package.json"
+            echo "✅ Updated packages/$pkg/package.json"
+          done
           
           # Update packages/tokscale/package.json (version + @tokscale/cli dependency)
           jq --arg v "$NEW_VERSION" '.version = $v | .dependencies["@tokscale/cli"] = $v' packages/tokscale/package.json > tmp.json && mv tmp.json packages/tokscale/package.json
@@ -93,16 +95,13 @@ jobs:
           # Verify all versions are updated
           echo ""
           echo "📋 Verification:"
-          echo "  @tokscale/core:  $(jq -r '.version' packages/core/package.json)"
           echo "  @tokscale/cli:   $(jq -r '.version' packages/cli/package.json)"
           echo "  tokscale:        $(jq -r '.version' packages/tokscale/package.json)"
-          echo "  cli -> core dep: $(jq -r '.dependencies["@tokscale/core"]' packages/cli/package.json)"
+          echo "  cli -> darwin arm64: $(jq -r '.optionalDependencies["@tokscale/cli-darwin-arm64"]' packages/cli/package.json)"
           echo "  tokscale -> cli: $(jq -r '.dependencies["@tokscale/cli"]' packages/tokscale/package.json)"
           echo "  Platform packages:"
-          for dir in packages/core/npm/*/; do
-            if [ -f "${dir}package.json" ]; then
-              echo "    $(basename $dir): $(jq -r '.version' "${dir}package.json")"
-            fi
+          for pkg in cli-darwin-arm64 cli-darwin-x64 cli-linux-x64-gnu cli-linux-x64-musl cli-linux-arm64-gnu cli-linux-arm64-musl cli-win32-x64-msvc cli-win32-arm64-msvc; do
+            echo "    $pkg: $(jq -r '.version' "packages/$pkg/package.json")"
           done
           
           echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
@@ -113,14 +112,20 @@ jobs:
         with:
           name: bumped-packages
           path: |
-            packages/core/package.json
-            packages/core/npm/*/package.json
             packages/cli/package.json
+            packages/cli-darwin-arm64/package.json
+            packages/cli-darwin-x64/package.json
+            packages/cli-linux-x64-gnu/package.json
+            packages/cli-linux-x64-musl/package.json
+            packages/cli-linux-arm64-gnu/package.json
+            packages/cli-linux-arm64-musl/package.json
+            packages/cli-win32-x64-msvc/package.json
+            packages/cli-win32-arm64-msvc/package.json
             packages/tokscale/package.json
           retention-days: 1
 
-  build:
-    name: Build - ${{ matrix.settings.target }}
+  build-cli-binary:
+    name: Build CLI binary - ${{ matrix.settings.target }}
     needs: bump-versions
     runs-on: ${{ matrix.settings.host }}
     strategy:
@@ -129,48 +134,60 @@ jobs:
         settings:
           - host: macos-latest
             target: x86_64-apple-darwin
-            build: |
-              cd packages/core
-              bun run build:platform --target x86_64-apple-darwin
-              strip -x *.node
+            package_dir: cli-darwin-x64
+            artifact_name: cli-binary-x86_64-apple-darwin
+            bin_name: tokscale
+            build: cargo build --release -p tokscale-cli --target x86_64-apple-darwin
+            strip: strip -x target/x86_64-apple-darwin/release/tokscale
           - host: macos-latest
             target: aarch64-apple-darwin
-            build: |
-              cd packages/core
-              bun run build:platform --target aarch64-apple-darwin
-              strip -x *.node
+            package_dir: cli-darwin-arm64
+            artifact_name: cli-binary-aarch64-apple-darwin
+            bin_name: tokscale
+            build: cargo build --release -p tokscale-cli --target aarch64-apple-darwin
+            strip: strip -x target/aarch64-apple-darwin/release/tokscale
           - host: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            build: |
-              cd packages/core
-              cargo zigbuild --release --target x86_64-unknown-linux-gnu.2.17
-              cp target/x86_64-unknown-linux-gnu/release/libtokscale_core.so tokscale-core.linux-x64-gnu.node
+            package_dir: cli-linux-x64-gnu
+            artifact_name: cli-binary-x86_64-unknown-linux-gnu
+            bin_name: tokscale
+            build: cargo zigbuild --release -p tokscale-cli --target x86_64-unknown-linux-gnu
+            strip: strip target/x86_64-unknown-linux-gnu/release/tokscale
           - host: ubuntu-latest
             target: x86_64-unknown-linux-musl
-            build: |
-              cd packages/core
-              bun run build:platform --target x86_64-unknown-linux-musl -x
+            package_dir: cli-linux-x64-musl
+            artifact_name: cli-binary-x86_64-unknown-linux-musl
+            bin_name: tokscale
+            build: cargo zigbuild --release -p tokscale-cli --target x86_64-unknown-linux-musl
+            strip: strip target/x86_64-unknown-linux-musl/release/tokscale
           - host: ubuntu-latest
             target: aarch64-unknown-linux-gnu
-            build: |
-              cd packages/core
-              cargo zigbuild --release --target aarch64-unknown-linux-gnu.2.17
-              cp target/aarch64-unknown-linux-gnu/release/libtokscale_core.so tokscale-core.linux-arm64-gnu.node
+            package_dir: cli-linux-arm64-gnu
+            artifact_name: cli-binary-aarch64-unknown-linux-gnu
+            bin_name: tokscale
+            build: cargo zigbuild --release -p tokscale-cli --target aarch64-unknown-linux-gnu
+            strip: aarch64-linux-gnu-strip target/aarch64-unknown-linux-gnu/release/tokscale
           - host: ubuntu-latest
             target: aarch64-unknown-linux-musl
-            build: |
-              cd packages/core
-              bun run build:platform --target aarch64-unknown-linux-musl -x
+            package_dir: cli-linux-arm64-musl
+            artifact_name: cli-binary-aarch64-unknown-linux-musl
+            bin_name: tokscale
+            build: cargo zigbuild --release -p tokscale-cli --target aarch64-unknown-linux-musl
+            strip: aarch64-linux-gnu-strip target/aarch64-unknown-linux-musl/release/tokscale
           - host: windows-latest
             target: x86_64-pc-windows-msvc
-            build: |
-              cd packages/core
-              bun run build:platform
+            package_dir: cli-win32-x64-msvc
+            artifact_name: cli-binary-x86_64-pc-windows-msvc
+            bin_name: tokscale.exe
+            build: cargo build --release -p tokscale-cli --target x86_64-pc-windows-msvc
+            strip: ""
           - host: windows-latest
             target: aarch64-pc-windows-msvc
-            build: |
-              cd packages/core
-              bun run build:platform --target aarch64-pc-windows-msvc
+            package_dir: cli-win32-arm64-msvc
+            artifact_name: cli-binary-aarch64-pc-windows-msvc
+            bin_name: tokscale.exe
+            build: cargo build --release -p tokscale-cli --target aarch64-pc-windows-msvc
+            strip: ""
 
     steps:
       - uses: actions/checkout@v4
@@ -180,24 +197,6 @@ jobs:
         with:
           name: bumped-packages
           path: packages/
-
-      - name: Restore package.json structure
-        shell: bash
-        run: |
-          # Restore main package.json files (already in correct location from download)
-          echo "📦 Using version: $(jq -r '.version' packages/core/package.json)"
-          
-          # Restore platform package.json files
-          for dir in packages/core/npm/*/; do
-            if [ -f "${dir}package.json" ]; then
-              echo "  Platform $(basename $dir): $(jq -r '.version' "${dir}package.json")"
-            fi
-          done
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.1.38
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -217,10 +216,8 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            ~/.napi-rs
-            .cargo-cache
-            packages/core/target/
-          key: ${{ matrix.settings.target }}-cargo-${{ matrix.settings.host }}-${{ hashFiles('packages/core/Cargo.lock') }}
+            target/
+          key: cli-${{ matrix.settings.target }}-cargo-${{ matrix.settings.host }}-${{ hashFiles('Cargo.lock') }}
 
       - uses: mlugg/setup-zig@v2
         if: ${{ contains(matrix.settings.target, 'linux') }}
@@ -235,59 +232,66 @@ jobs:
         with:
           tool: cargo-zigbuild
 
-      - name: Install napi-rs CLI
-        run: bun add -g @napi-rs/cli
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-        working-directory: packages/core
-
-      - name: Build
-        run: ${{ matrix.settings.build }}
+      - name: Build CLI binary
         shell: bash
+        run: ${{ matrix.settings.build }}
 
-      - name: Upload artifact
+      - name: Install cross-compilation strip tool
+        if: contains(matrix.settings.target, 'aarch64') && runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y binutils-aarch64-linux-gnu
+
+      - name: Strip CLI binary
+        if: ${{ matrix.settings.strip != '' }}
+        shell: bash
+        run: ${{ matrix.settings.strip }}
+
+      - name: Upload CLI binary artifact
         uses: actions/upload-artifact@v4
         with:
-          name: bindings-${{ matrix.settings.target }}
-          path: packages/core/*.node
-          if-no-files-found: error
-
-      # Upload generated JS files from first build only (ubuntu x86_64-gnu)
-      - name: Upload generated NAPI files
-        if: matrix.settings.target == 'x86_64-unknown-linux-gnu'
-        uses: actions/upload-artifact@v4
-        with:
-          name: napi-generated
-          path: |
-            packages/core/index.js
-            packages/core/index.d.ts
+          name: ${{ matrix.settings.artifact_name }}
+          path: target/${{ matrix.settings.target }}/release/${{ matrix.settings.bin_name }}
           if-no-files-found: error
 
   publish-platform-packages:
-    name: Publish platform packages
-    needs: [bump-versions, build]
+    name: Publish platform package - ${{ matrix.settings.package_name }}
+    needs: [bump-versions, build-cli-binary]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        platform:
-          - target: x86_64-apple-darwin
-            npm-dir: darwin-x64
-          - target: aarch64-apple-darwin
-            npm-dir: darwin-arm64
-          - target: x86_64-unknown-linux-gnu
-            npm-dir: linux-x64-gnu
-          - target: aarch64-unknown-linux-gnu
-            npm-dir: linux-arm64-gnu
-          - target: x86_64-unknown-linux-musl
-            npm-dir: linux-x64-musl
-          - target: aarch64-unknown-linux-musl
-            npm-dir: linux-arm64-musl
-          - target: x86_64-pc-windows-msvc
-            npm-dir: win32-x64-msvc
-          - target: aarch64-pc-windows-msvc
-            npm-dir: win32-arm64-msvc
+        settings:
+          - package_name: '@tokscale/cli-darwin-x64'
+            package_dir: cli-darwin-x64
+            artifact_name: cli-binary-x86_64-apple-darwin
+            binary_name: tokscale
+          - package_name: '@tokscale/cli-darwin-arm64'
+            package_dir: cli-darwin-arm64
+            artifact_name: cli-binary-aarch64-apple-darwin
+            binary_name: tokscale
+          - package_name: '@tokscale/cli-linux-x64-gnu'
+            package_dir: cli-linux-x64-gnu
+            artifact_name: cli-binary-x86_64-unknown-linux-gnu
+            binary_name: tokscale
+          - package_name: '@tokscale/cli-linux-x64-musl'
+            package_dir: cli-linux-x64-musl
+            artifact_name: cli-binary-x86_64-unknown-linux-musl
+            binary_name: tokscale
+          - package_name: '@tokscale/cli-linux-arm64-gnu'
+            package_dir: cli-linux-arm64-gnu
+            artifact_name: cli-binary-aarch64-unknown-linux-gnu
+            binary_name: tokscale
+          - package_name: '@tokscale/cli-linux-arm64-musl'
+            package_dir: cli-linux-arm64-musl
+            artifact_name: cli-binary-aarch64-unknown-linux-musl
+            binary_name: tokscale
+          - package_name: '@tokscale/cli-win32-x64-msvc'
+            package_dir: cli-win32-x64-msvc
+            artifact_name: cli-binary-x86_64-pc-windows-msvc
+            binary_name: tokscale.exe
+          - package_name: '@tokscale/cli-win32-arm64-msvc'
+            package_dir: cli-win32-arm64-msvc
+            artifact_name: cli-binary-aarch64-pc-windows-msvc
+            binary_name: tokscale.exe
 
     steps:
       - uses: actions/checkout@v4
@@ -303,62 +307,33 @@ jobs:
         with:
           bun-version: 1.1.38
 
-      - name: Download platform binary
+      - name: Download CLI binary artifact
         uses: actions/download-artifact@v4
         with:
-          name: bindings-${{ matrix.platform.target }}
-          path: packages/core/npm/${{ matrix.platform.npm-dir }}/
+          name: ${{ matrix.settings.artifact_name }}
+          path: artifacts/${{ matrix.settings.package_dir }}
 
-      - name: Verify binary exists
-        working-directory: packages/core/npm/${{ matrix.platform.npm-dir }}
+      - name: Prepare package binary
+        shell: bash
         run: |
-          ls -la *.node
-          echo "📦 Publishing $(jq -r '.name' package.json)@$(jq -r '.version' package.json)"
+          mkdir -p "packages/${{ matrix.settings.package_dir }}/bin"
+          cp "artifacts/${{ matrix.settings.package_dir }}/${{ matrix.settings.binary_name }}" "packages/${{ matrix.settings.package_dir }}/bin/${{ matrix.settings.binary_name }}"
+          if [ "${{ matrix.settings.binary_name }}" = "tokscale" ]; then
+            chmod +x "packages/${{ matrix.settings.package_dir }}/bin/tokscale"
+          fi
+          ls -la "packages/${{ matrix.settings.package_dir }}/bin"
 
       - name: Publish platform package
-        working-directory: packages/core/npm/${{ matrix.platform.npm-dir }}
-        run: bun publish --access public
-        env:
-          NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-  publish-core:
-    name: Publish @tokscale/core
-    needs: [bump-versions, build, publish-platform-packages]
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download bumped package.json files
-        uses: actions/download-artifact@v4
-        with:
-          name: bumped-packages
-          path: packages/
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.1.38
-
-      - name: Download generated NAPI files
-        uses: actions/download-artifact@v4
-        with:
-          name: napi-generated
-          path: packages/core/
-
-      - name: Publish @tokscale/core
-        working-directory: packages/core
+        working-directory: packages/${{ matrix.settings.package_dir }}
         run: |
-          echo "📦 Publishing version: $(jq -r '.version' package.json)"
-          echo "📋 optionalDependencies:"
-          jq '.optionalDependencies' package.json
+          echo "📦 Publishing ${{ matrix.settings.package_name }} version: $(jq -r '.version' package.json)"
           bun publish --access public
         env:
           NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   publish-cli:
     name: Publish @tokscale/cli
-    needs: [bump-versions, publish-core]
+    needs: [bump-versions, publish-platform-packages]
     runs-on: ubuntu-latest
 
     steps:
@@ -437,12 +412,6 @@ jobs:
           name: bumped-packages
           path: packages/
 
-      - name: Download generated NAPI files
-        uses: actions/download-artifact@v4
-        with:
-          name: napi-generated
-          path: packages/core/
-
       - name: Configure Git
         run: |
           git config user.name "github-actions[bot]"
@@ -453,7 +422,7 @@ jobs:
           NEW_VERSION="${{ needs.bump-versions.outputs.version }}"
           echo "📦 Committing version bump to $NEW_VERSION"
           
-          git add packages/core/package.json packages/core/index.js packages/core/index.d.ts packages/core/npm/*/package.json packages/cli/package.json packages/tokscale/package.json
+          git add packages/cli/package.json packages/cli-darwin-arm64/package.json packages/cli-darwin-x64/package.json packages/cli-linux-x64-gnu/package.json packages/cli-linux-x64-musl/package.json packages/cli-linux-arm64-gnu/package.json packages/cli-linux-arm64-musl/package.json packages/cli-win32-x64-msvc/package.json packages/cli-win32-arm64-msvc/package.json packages/tokscale/package.json
           git commit -m "chore: bump version to $NEW_VERSION"
           git push
           

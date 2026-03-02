@@ -1,23 +1,23 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 /**
- * Test suite for POST /api/submit - Source-Level Merge
+ * Test suite for POST /api/submit - Client-Level Merge
  * 
- * These tests verify the source-level merge functionality:
+ * These tests verify the client-level merge functionality:
  * - First submission creates new records
- * - Subsequent submissions merge by source
- * - Sources not in submission are preserved
+ * - Subsequent submissions merge by client
+ * - Clients not in submission are preserved
  * - Totals are recalculated from dailyBreakdown
  * - Concurrent submissions are handled correctly
  */
 
 // Mock data factories
 function createMockSubmissionData(overrides: Partial<{
-  sources: string[];
+  clients: string[];
   contributions: Array<{
     date: string;
-    sources: Array<{
-      source: string;
+    clients: Array<{
+      client: string;
       modelId: string;
       cost: number;
       tokens: { input: number; output: number; cacheRead: number; cacheWrite: number };
@@ -25,12 +25,12 @@ function createMockSubmissionData(overrides: Partial<{
     }>;
   }>;
 }> = {}) {
-  const defaultSources = overrides.sources || ['claude'];
+  const defaultClients = overrides.clients || ['claude'];
   const defaultContributions = overrides.contributions || [
     {
       date: '2024-12-01',
-      sources: defaultSources.map(source => ({
-        source,
+      clients: defaultClients.map(client => ({
+        client,
         modelId: 'claude-sonnet-4-20250514',
         cost: 1.5,
         tokens: { input: 1000, output: 500, cacheRead: 100, cacheWrite: 50 },
@@ -50,62 +50,62 @@ function createMockSubmissionData(overrides: Partial<{
     },
     summary: {
       totalTokens: defaultContributions.reduce((sum, d) => 
-        sum + d.sources.reduce((s, src) => s + src.tokens.input + src.tokens.output, 0), 0
+        sum + d.clients.reduce((s, client) => s + client.tokens.input + client.tokens.output, 0), 0
       ),
       totalCost: defaultContributions.reduce((sum, d) => 
-        sum + d.sources.reduce((s, src) => s + src.cost, 0), 0
+        sum + d.clients.reduce((s, client) => s + client.cost, 0), 0
       ),
       totalDays: defaultContributions.length,
-      activeDays: defaultContributions.filter(d => d.sources.length > 0).length,
+      activeDays: defaultContributions.filter(d => d.clients.length > 0).length,
       averagePerDay: 0,
       maxCostInSingleDay: 0,
-      sources: defaultSources,
+      clients: defaultClients,
       models: ['claude-sonnet-4-20250514'],
     },
     years: [],
     contributions: defaultContributions.map(d => ({
       date: d.date,
       totals: {
-        tokens: d.sources.reduce((s, src) => s + src.tokens.input + src.tokens.output, 0),
-        cost: d.sources.reduce((s, src) => s + src.cost, 0),
-        messages: d.sources.reduce((s, src) => s + src.messages, 0),
+        tokens: d.clients.reduce((s, client) => s + client.tokens.input + client.tokens.output, 0),
+        cost: d.clients.reduce((s, client) => s + client.cost, 0),
+        messages: d.clients.reduce((s, client) => s + client.messages, 0),
       },
       intensity: 2 as const,
       tokenBreakdown: {
-        input: d.sources.reduce((s, src) => s + src.tokens.input, 0),
-        output: d.sources.reduce((s, src) => s + src.tokens.output, 0),
-        cacheRead: d.sources.reduce((s, src) => s + src.tokens.cacheRead, 0),
-        cacheWrite: d.sources.reduce((s, src) => s + src.tokens.cacheWrite, 0),
+        input: d.clients.reduce((s, client) => s + client.tokens.input, 0),
+        output: d.clients.reduce((s, client) => s + client.tokens.output, 0),
+        cacheRead: d.clients.reduce((s, client) => s + client.tokens.cacheRead, 0),
+        cacheWrite: d.clients.reduce((s, client) => s + client.tokens.cacheWrite, 0),
         reasoning: 0,
       },
-      sources: d.sources.map(src => ({
-        source: src.source as 'opencode' | 'claude' | 'codex' | 'gemini' | 'cursor' | 'amp' | 'droid' | 'openclaw' | 'pi' | 'kimi',
-        modelId: src.modelId,
-        tokens: src.tokens,
-        cost: src.cost,
-        messages: src.messages,
+      clients: d.clients.map(client => ({
+        client: client.client as 'opencode' | 'claude' | 'codex' | 'gemini' | 'cursor' | 'amp' | 'droid' | 'openclaw' | 'pi' | 'kimi' | 'qwen',
+        modelId: client.modelId,
+        tokens: client.tokens,
+        cost: client.cost,
+        messages: client.messages,
       })),
     })),
   };
 }
 
-describe('POST /api/submit - Source-Level Merge', () => {
+describe('POST /api/submit - Client-Level Merge', () => {
   describe('First Submission (Create Mode)', () => {
-    it('should create new submission with all sources', () => {
-      const data = createMockSubmissionData({ sources: ['claude', 'cursor'] });
+    it('should create new submission with all clients', () => {
+      const data = createMockSubmissionData({ clients: ['claude', 'cursor'] });
       
       // Verify data structure
-      expect(data.summary.sources).toContain('claude');
-      expect(data.summary.sources).toContain('cursor');
-      expect(data.contributions[0].sources.length).toBe(2);
+      expect(data.summary.clients).toContain('claude');
+      expect(data.summary.clients).toContain('cursor');
+      expect(data.contributions[0].clients.length).toBe(2);
     });
 
     it('should create dailyBreakdown for each day', () => {
       const data = createMockSubmissionData({
         contributions: [
-          { date: '2024-12-01', sources: [{ source: 'claude', modelId: 'claude-sonnet-4', cost: 1, tokens: { input: 100, output: 50, cacheRead: 0, cacheWrite: 0 }, messages: 1 }] },
-          { date: '2024-12-02', sources: [{ source: 'claude', modelId: 'claude-sonnet-4', cost: 2, tokens: { input: 200, output: 100, cacheRead: 0, cacheWrite: 0 }, messages: 2 }] },
-          { date: '2024-12-03', sources: [{ source: 'claude', modelId: 'claude-sonnet-4', cost: 3, tokens: { input: 300, output: 150, cacheRead: 0, cacheWrite: 0 }, messages: 3 }] },
+          { date: '2024-12-01', clients: [{ client: 'claude', modelId: 'claude-sonnet-4', cost: 1, tokens: { input: 100, output: 50, cacheRead: 0, cacheWrite: 0 }, messages: 1 }] },
+          { date: '2024-12-02', clients: [{ client: 'claude', modelId: 'claude-sonnet-4', cost: 2, tokens: { input: 200, output: 100, cacheRead: 0, cacheWrite: 0 }, messages: 2 }] },
+          { date: '2024-12-03', clients: [{ client: 'claude', modelId: 'claude-sonnet-4', cost: 3, tokens: { input: 300, output: 150, cacheRead: 0, cacheWrite: 0 }, messages: 3 }] },
         ],
       });
       
@@ -113,50 +113,50 @@ describe('POST /api/submit - Source-Level Merge', () => {
       expect(data.contributions.map(c => c.date)).toEqual(['2024-12-01', '2024-12-02', '2024-12-03']);
     });
 
-    it('should support pi source in submission payload', () => {
-      const data = createMockSubmissionData({ sources: ['pi'] });
+    it('should support pi client in submission payload', () => {
+      const data = createMockSubmissionData({ clients: ['pi'] });
 
-      expect(data.summary.sources).toContain('pi');
-      expect(data.contributions[0].sources[0].source).toBe('pi');
+      expect(data.summary.clients).toContain('pi');
+      expect(data.contributions[0].clients[0].client).toBe('pi');
     });
 
-    it('should support kimi source in submission payload', () => {
-      const data = createMockSubmissionData({ sources: ['kimi'] });
+    it('should support kimi client in submission payload', () => {
+      const data = createMockSubmissionData({ clients: ['kimi'] });
 
-      expect(data.summary.sources).toContain('kimi');
-      expect(data.contributions[0].sources[0].source).toBe('kimi');
+      expect(data.summary.clients).toContain('kimi');
+      expect(data.contributions[0].clients[0].client).toBe('kimi');
     });
   });
 
-  describe('Source-Level Merge Logic', () => {
-    it('should preserve sources NOT in submission but delete sources with no day activity', () => {
-      const existingSourceBreakdown = {
+  describe('Client-Level Merge Logic', () => {
+    it('should preserve clients NOT in submission but delete clients with no day activity', () => {
+      const existingClientBreakdown = {
         claude: { tokens: 1000, cost: 10, modelId: 'claude-sonnet-4', input: 600, output: 400, cacheRead: 0, cacheWrite: 0, messages: 5 },
         cursor: { tokens: 500, cost: 5, modelId: 'cursor-small', input: 300, output: 200, cacheRead: 0, cacheWrite: 0, messages: 3 },
         codex: { tokens: 200, cost: 2, modelId: 'gpt-4', input: 100, output: 100, cacheRead: 0, cacheWrite: 0, messages: 1 },
       };
       
-      const incomingSources = new Set(['claude', 'cursor']);
-      const incomingSourceBreakdown = {
+      const incomingClients = new Set(['claude', 'cursor']);
+      const incomingClientBreakdown = {
         claude: { tokens: 1200, cost: 12, modelId: 'claude-sonnet-4', input: 700, output: 500, cacheRead: 0, cacheWrite: 0, messages: 6 },
       };
       
-      const merged = { ...existingSourceBreakdown } as Record<string, typeof existingSourceBreakdown.claude>;
-      for (const sourceName of incomingSources) {
-        if (incomingSourceBreakdown[sourceName as keyof typeof incomingSourceBreakdown]) {
-          merged[sourceName] = incomingSourceBreakdown[sourceName as keyof typeof incomingSourceBreakdown];
+      const merged = { ...existingClientBreakdown } as Record<string, typeof existingClientBreakdown.claude>;
+      for (const clientName of incomingClients) {
+        if (incomingClientBreakdown[clientName as keyof typeof incomingClientBreakdown]) {
+          merged[clientName] = incomingClientBreakdown[clientName as keyof typeof incomingClientBreakdown];
         } else {
-          delete merged[sourceName];
+          delete merged[clientName];
         }
       }
       
-      expect(merged.codex).toEqual(existingSourceBreakdown.codex);
+      expect(merged.codex).toEqual(existingClientBreakdown.codex);
       expect(merged.claude.tokens).toBe(1200);
       expect(merged.cursor).toBeUndefined();
     });
 
-    it('should update submitted source data', () => {
-      // Same source submitted again should replace, not add
+    it('should update submitted client data', () => {
+      // Same client submitted again should replace, not add
       const existingClaude = { tokens: 1000, cost: 10, modelId: 'claude-sonnet-4', input: 600, output: 400, cacheRead: 0, cacheWrite: 0, messages: 5 };
       const newClaude = { tokens: 1500, cost: 15, modelId: 'claude-sonnet-4', input: 900, output: 600, cacheRead: 0, cacheWrite: 0, messages: 8 };
       
@@ -165,26 +165,26 @@ describe('POST /api/submit - Source-Level Merge', () => {
       expect(newClaude.tokens).toBe(1500); // Not 1000 + 1500 = 2500
     });
 
-    it('should merge new source into existing day', () => {
+    it('should merge new client into existing day', () => {
       // Day has claude, now cursor is added
-      const existingSourceBreakdown = {
+      const existingClientBreakdown = {
         claude: { tokens: 1000, cost: 10, modelId: 'claude-sonnet-4', input: 600, output: 400, cacheRead: 0, cacheWrite: 0, messages: 5 },
       };
       
-      const incomingSources = new Set(['cursor']);
-      const incomingSourceBreakdown = {
+      const incomingClients = new Set(['cursor']);
+      const incomingClientBreakdown = {
         cursor: { tokens: 500, cost: 5, modelId: 'cursor-small', input: 300, output: 200, cacheRead: 0, cacheWrite: 0, messages: 3 },
       };
       
       // Simulate merge
-      const merged = { ...existingSourceBreakdown };
-      for (const sourceName of incomingSources) {
-        if (incomingSourceBreakdown[sourceName as keyof typeof incomingSourceBreakdown]) {
-          (merged as Record<string, typeof existingSourceBreakdown.claude>)[sourceName] = incomingSourceBreakdown[sourceName as keyof typeof incomingSourceBreakdown];
+      const merged = { ...existingClientBreakdown };
+      for (const clientName of incomingClients) {
+        if (incomingClientBreakdown[clientName as keyof typeof incomingClientBreakdown]) {
+          (merged as Record<string, typeof existingClientBreakdown.claude>)[clientName] = incomingClientBreakdown[clientName as keyof typeof incomingClientBreakdown];
         }
       }
       
-      // Both sources should be present
+      // Both clients should be present
       expect(Object.keys(merged)).toContain('claude');
       expect(Object.keys(merged)).toContain('cursor');
     });
@@ -204,45 +204,45 @@ describe('POST /api/submit - Source-Level Merge', () => {
 
   describe('Totals Recalculation', () => {
     it('should recalculate totalTokens from dailyBreakdown', () => {
-      const sourceBreakdown = {
+      const clientBreakdown = {
         claude: { tokens: 1000, cost: 10, modelId: 'claude-sonnet-4', input: 600, output: 400, cacheRead: 50, cacheWrite: 25, messages: 5 },
         cursor: { tokens: 500, cost: 5, modelId: 'cursor-small', input: 300, output: 200, cacheRead: 30, cacheWrite: 15, messages: 3 },
       };
       
       // Simulate recalculateDayTotals
       let totalTokens = 0;
-      for (const source of Object.values(sourceBreakdown)) {
-        totalTokens += source.tokens;
+      for (const client of Object.values(clientBreakdown)) {
+        totalTokens += client.tokens;
       }
       
       expect(totalTokens).toBe(1500);
     });
 
     it('should recalculate cache tokens', () => {
-      const sourceBreakdown = {
+      const clientBreakdown = {
         claude: { tokens: 1000, cost: 10, modelId: 'claude-sonnet-4', input: 600, output: 400, cacheRead: 50, cacheWrite: 25, messages: 5 },
         opencode: { tokens: 800, cost: 8, modelId: 'gpt-4o', input: 500, output: 300, cacheRead: 40, cacheWrite: 20, messages: 4 },
       };
       
       let totalCacheRead = 0;
       let totalCacheWrite = 0;
-      for (const source of Object.values(sourceBreakdown)) {
-        totalCacheRead += source.cacheRead;
-        totalCacheWrite += source.cacheWrite;
+      for (const client of Object.values(clientBreakdown)) {
+        totalCacheRead += client.cacheRead;
+        totalCacheWrite += client.cacheWrite;
       }
       
       expect(totalCacheRead).toBe(90);
       expect(totalCacheWrite).toBe(45);
     });
 
-    it('should update sourcesUsed to include all sources', () => {
-      // Simulate collecting sources from all days
-      const day1Sources = ['claude', 'cursor'];
-      const day2Sources = ['claude', 'opencode'];
+    it('should update clientsUsed to include all clients', () => {
+      // Simulate collecting clients from all days
+      const day1Clients = ['claude', 'cursor'];
+      const day2Clients = ['claude', 'opencode'];
       
-      const allSources = new Set([...day1Sources, ...day2Sources]);
+      const allClients = new Set([...day1Clients, ...day2Clients]);
       
-      expect(Array.from(allSources).sort()).toEqual(['claude', 'cursor', 'opencode']);
+      expect(Array.from(allClients).sort()).toEqual(['claude', 'cursor', 'opencode']);
     });
   });
 
@@ -254,46 +254,46 @@ describe('POST /api/submit - Source-Level Merge', () => {
       // API should return 400 for this
     });
 
-    it('should handle day with no data for submitted source', () => {
+    it('should handle day with no data for submitted client', () => {
       // User submits --claude but a day only has opencode data
       const dayWithOnlyOpencode = {
         date: '2024-12-01',
-        sources: [
-          { source: 'opencode', modelId: 'gpt-4o', cost: 5, tokens: { input: 300, output: 200, cacheRead: 0, cacheWrite: 0 }, messages: 3 },
+        clients: [
+          { client: 'opencode', modelId: 'gpt-4o', cost: 5, tokens: { input: 300, output: 200, cacheRead: 0, cacheWrite: 0 }, messages: 3 },
         ],
       };
       
-      const submittedSources = new Set(['claude']);
+      const submittedClients = new Set(['claude']);
       
       // No claude data to update for this day
-      const claudeInDay = dayWithOnlyOpencode.sources.find(s => s.source === 'claude');
+      const claudeInDay = dayWithOnlyOpencode.clients.find(client => client.client === 'claude');
       expect(claudeInDay).toBeUndefined();
       
       // opencode should be preserved
-      const opencodeInDay = dayWithOnlyOpencode.sources.find(s => s.source === 'opencode');
+      const opencodeInDay = dayWithOnlyOpencode.clients.find(client => client.client === 'opencode');
       expect(opencodeInDay).toBeDefined();
     });
 
     it('should handle concurrent submissions without data loss', () => {
       // This is tested at the database level with .for('update') locks
       // Here we just verify the concept
-      const submission1Sources = ['claude'];
-      const submission2Sources = ['cursor'];
+      const submission1Clients = ['claude'];
+      const submission2Clients = ['cursor'];
       
       // Both should be present after sequential processing
-      const finalSources = new Set([...submission1Sources, ...submission2Sources]);
-      expect(finalSources.size).toBe(2);
+      const finalClients = new Set([...submission1Clients, ...submission2Clients]);
+      expect(finalClients.size).toBe(2);
     });
 
-    it('should treat contribution sources as submitted even if summary.sources is incomplete', () => {
+    it('should treat contribution clients as submitted even if summary.clients is incomplete', () => {
       const data = createMockSubmissionData({
-        sources: ['claude'],
+        clients: ['claude'],
         contributions: [
           {
             date: '2024-12-01',
-            sources: [
+            clients: [
               {
-                source: 'pi',
+                client: 'pi',
                 modelId: 'pi-model',
                 cost: 1,
                 tokens: { input: 100, output: 50, cacheRead: 0, cacheWrite: 0 },
@@ -304,32 +304,32 @@ describe('POST /api/submit - Source-Level Merge', () => {
         ],
       });
 
-      const submittedSources = new Set(data.summary.sources);
+      const submittedClients = new Set(data.summary.clients);
       for (const contribution of data.contributions) {
-        for (const source of contribution.sources) {
-          submittedSources.add(source.source);
+        for (const client of contribution.clients) {
+          submittedClients.add(client.client);
         }
       }
 
-      expect(submittedSources.has('pi')).toBe(true);
+      expect(submittedClients.has('pi')).toBe(true);
     });
 
 
   });
 
-  describe('Multi-Model Per Source', () => {
-    it('should aggregate multiple models per source correctly', () => {
-      const daySourceEntries = [
-        { source: 'claude', modelId: 'claude-sonnet-4', cost: 10, tokens: { input: 500, output: 300, cacheRead: 100, cacheWrite: 50 }, messages: 5 },
-        { source: 'claude', modelId: 'claude-opus-4', cost: 20, tokens: { input: 800, output: 500, cacheRead: 200, cacheWrite: 100 }, messages: 8 },
-        { source: 'cursor', modelId: 'gpt-4o', cost: 5, tokens: { input: 200, output: 100, cacheRead: 50, cacheWrite: 25 }, messages: 3 },
+  describe('Multi-Model Per Client', () => {
+    it('should aggregate multiple models per client correctly', () => {
+      const dayClientEntries = [
+        { client: 'claude', modelId: 'claude-sonnet-4', cost: 10, tokens: { input: 500, output: 300, cacheRead: 100, cacheWrite: 50 }, messages: 5 },
+        { client: 'claude', modelId: 'claude-opus-4', cost: 20, tokens: { input: 800, output: 500, cacheRead: 200, cacheWrite: 100 }, messages: 8 },
+        { client: 'cursor', modelId: 'gpt-4o', cost: 5, tokens: { input: 200, output: 100, cacheRead: 50, cacheWrite: 25 }, messages: 3 },
       ];
 
       type ModelData = { tokens: number; cost: number; input: number; output: number; cacheRead: number; cacheWrite: number; messages: number };
-      type SourceData = ModelData & { models: Record<string, ModelData> };
-      const result: Record<string, SourceData> = {};
+      type ClientData = ModelData & { models: Record<string, ModelData> };
+      const result: Record<string, ClientData> = {};
 
-      for (const entry of daySourceEntries) {
+      for (const entry of dayClientEntries) {
         const modelData: ModelData = {
           tokens: entry.tokens.input + entry.tokens.output + entry.tokens.cacheRead + entry.tokens.cacheWrite,
           cost: entry.cost,
@@ -340,7 +340,7 @@ describe('POST /api/submit - Source-Level Merge', () => {
           messages: entry.messages,
         };
 
-        const existing = result[entry.source];
+        const existing = result[entry.client];
         if (existing) {
           existing.tokens += modelData.tokens;
           existing.cost += modelData.cost;
@@ -351,7 +351,7 @@ describe('POST /api/submit - Source-Level Merge', () => {
           existing.messages += modelData.messages;
           existing.models[entry.modelId] = modelData;
         } else {
-          result[entry.source] = { ...modelData, models: { [entry.modelId]: modelData } };
+          result[entry.client] = { ...modelData, models: { [entry.modelId]: modelData } };
         }
       }
 
@@ -366,8 +366,8 @@ describe('POST /api/submit - Source-Level Merge', () => {
       expect(Object.keys(result.cursor.models)).toEqual(['gpt-4o']);
     });
 
-    it('should build modelBreakdown from sources with multiple models', () => {
-      const sourceBreakdown = {
+    it('should build modelBreakdown from clients with multiple models', () => {
+      const clientBreakdown = {
         claude: {
           tokens: 2550,
           cost: 30,
@@ -396,8 +396,8 @@ describe('POST /api/submit - Source-Level Merge', () => {
       };
 
       const modelBreakdown: Record<string, number> = {};
-      for (const source of Object.values(sourceBreakdown)) {
-        for (const [modelId, modelData] of Object.entries(source.models)) {
+      for (const client of Object.values(clientBreakdown)) {
+        for (const [modelId, modelData] of Object.entries(client.models)) {
           modelBreakdown[modelId] = (modelBreakdown[modelId] || 0) + modelData.tokens;
         }
       }
@@ -431,14 +431,14 @@ describe('POST /api/submit - Source-Level Merge', () => {
           totalCost: 15.5,
           dateRange: { start: '2024-12-01', end: '2024-12-31' },
           activeDays: 25,
-          sources: ['claude', 'cursor'],
+          clients: ['claude', 'cursor'],
         },
         mode: 'merge' as const,
       };
       
       expect(mockResponse.metrics).toBeDefined();
       expect(mockResponse.metrics.totalTokens).toBeGreaterThan(0);
-      expect(mockResponse.metrics.sources).toContain('claude');
+      expect(mockResponse.metrics.clients).toContain('claude');
       expect(mockResponse.mode).toBe('merge');
     });
   });

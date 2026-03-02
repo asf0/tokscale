@@ -1,3 +1,0 @@
-{"type":"user","uuid":"msg-001","timestamp":"2024-12-01T10:00:00.000Z","message":{"content":"Hello","model":null}}
-{"type":"assistant","uuid":"msg-002","timestamp":"2024-12-01T10:00:30.000Z","message":{"content":"Hi there!","model":"claude-3-5-sonnet-20241022"},"costUSD":0.05,"cacheCreationInputTokens":100,"cacheReadInputTokens":50,"inputTokens":200,"outputTokens":100}
-{"type":"assistant","uuid":"msg-003","timestamp":"2024-12-01T10:01:00.000Z","message":{"content":"How can I help?","model":"claude-3-5-sonnet-20241022"},"costUSD":0.03,"inputTokens":150,"outputTokens":80}

@@ -1,7 +1,7 @@
 "use client";
 
 import styled from "styled-components";
-import type { ViewMode, ColorPaletteName, SourceType, GraphColorPalette } from "@/lib/types";
+import type { ViewMode, ColorPaletteName, ClientType, GraphColorPalette } from "@/lib/types";
 import { getPaletteNames, colorPalettes } from "@/lib/themes";
 import { SOURCE_DISPLAY_NAMES, SOURCE_LOGOS } from "@/lib/constants";
 import { formatTokenCount } from "@/lib/utils";
@@ -14,9 +14,9 @@ interface GraphControlsProps {
   selectedYear: string;
   availableYears: string[];
   onYearChange: (year: string) => void;
-  sourceFilter: SourceType[];
-  availableSources: SourceType[];
-  onSourceFilterChange: (sources: SourceType[]) => void;
+  clientFilter: ClientType[];
+  availableClients: ClientType[];
+  onClientFilterChange: (clients: ClientType[]) => void;
   palette: GraphColorPalette;
   totalTokens: number;
 }
@@ -255,19 +255,19 @@ export function GraphControls({
   selectedYear,
   availableYears,
   onYearChange,
-  sourceFilter,
-  availableSources,
-  onSourceFilterChange,
+  clientFilter,
+  availableClients,
+  onClientFilterChange,
   palette,
   totalTokens,
 }: GraphControlsProps) {
   const paletteNames = getPaletteNames();
 
-  const handleSourceToggle = (source: SourceType) => {
-    if (sourceFilter.includes(source)) {
-      onSourceFilterChange(sourceFilter.filter((s) => s !== source));
+  const handleClientToggle = (client: ClientType) => {
+    if (clientFilter.includes(client)) {
+      onClientFilterChange(clientFilter.filter((c) => c !== client));
     } else {
-      onSourceFilterChange([...sourceFilter, source]);
+      onClientFilterChange([...clientFilter, client]);
     }
   };
 
@@ -348,47 +348,47 @@ export function GraphControls({
       <ClearBoth />
 
       <FiltersWrapper>
-        {availableSources.length > 1 && (
-          <SourceFilterGroup role="group" aria-label="Source filters">
-            <FilterLabel id="source-filter-label" style={{ color: "var(--color-fg-muted)" }}>Filter:</FilterLabel>
-            {availableSources.map((source) => {
-              const isSelected = sourceFilter.length === 0 || sourceFilter.includes(source);
+        {availableClients.length > 1 && (
+          <SourceFilterGroup role="group" aria-label="Client filters">
+            <FilterLabel id="client-filter-label" style={{ color: "var(--color-fg-muted)" }}>Filter:</FilterLabel>
+            {availableClients.map((client) => {
+              const isSelected = clientFilter.length === 0 || clientFilter.includes(client);
               return (
                 <SourceFilterButton
-                  key={source}
+                  key={client}
                   $isSelected={isSelected}
-                  onClick={() => handleSourceToggle(source)}
+                  onClick={() => handleClientToggle(client)}
                   aria-pressed={isSelected}
-                  aria-label={`Filter by ${SOURCE_DISPLAY_NAMES[source] || source}`}
+                  aria-label={`Filter by ${SOURCE_DISPLAY_NAMES[client] || client}`}
                   style={{
                     backgroundColor: isSelected ? `${palette.grade3}30` : "transparent",
                     color: "var(--color-fg-default)",
                     borderColor: isSelected ? palette.grade3 : "var(--color-border-default)",
                   }}
                 >
-                  {SOURCE_LOGOS[source] && (
+                  {SOURCE_LOGOS[client] && (
                     <SourceLogo
-                      src={SOURCE_LOGOS[source]}
-                      alt={`${SOURCE_DISPLAY_NAMES[source] || source} logo`}
+                      src={SOURCE_LOGOS[client]}
+                      alt={`${SOURCE_DISPLAY_NAMES[client] || client} logo`}
                     />
                   )}
-                  {SOURCE_DISPLAY_NAMES[source] || source}
+                  {SOURCE_DISPLAY_NAMES[client] || client}
                 </SourceFilterButton>
               );
             })}
-            {sourceFilter.length > 0 && sourceFilter.length < availableSources.length && (
+            {clientFilter.length > 0 && clientFilter.length < availableClients.length && (
               <ActionButton
-                onClick={() => onSourceFilterChange([...availableSources])}
-                aria-label="Show all sources"
+                onClick={() => onClientFilterChange([...availableClients])}
+                aria-label="Show all clients"
                 style={{ color: "var(--color-fg-muted)" }}
               >
                 Show all
               </ActionButton>
             )}
-            {sourceFilter.length === availableSources.length && (
+            {clientFilter.length === availableClients.length && (
               <ActionButton
-                onClick={() => onSourceFilterChange([])}
-                aria-label="Clear all source filters"
+                onClick={() => onClientFilterChange([])}
+                aria-label="Clear all client filters"
                 style={{ color: "var(--color-fg-muted)" }}
               >
                 Clear
@@ -396,17 +396,6 @@ export function GraphControls({
             )}
           </SourceFilterGroup>
         )}
-
-        <LegendContainer>
-          <LegendText style={{ color: "var(--color-fg-muted)" }}>Less</LegendText>
-          {[0, 1, 2, 3, 4].map((level) => (
-            <LegendBox
-              key={level}
-              style={{ backgroundColor: palette[`grade${level}` as keyof GraphColorPalette] as string }}
-            />
-          ))}
-          <LegendText style={{ color: "var(--color-fg-muted)" }}>More</LegendText>
-        </LegendContainer>
       </FiltersWrapper>
     </Container>
   );

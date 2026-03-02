@@ -2,11 +2,19 @@
 
 <div align="center">
 
-[![Tokscale](./.github/assets/hero.png)](https://tokscale.ai)
+[![Tokscale](./.github/assets/hero-v2.png)](https://tokscale.ai)
 
 </div>
 
 > A high-performance CLI tool and visualization dashboard for tracking token usage and costs across multiple AI coding agents.
+
+> [!TIP]
+>
+> v2 (ratatui rewrite + windows support) is upcoming! <br />
+> I drop new open-source work every week. Don't miss the next one.
+>
+> | [<img alt="GitHub Follow" src="https://img.shields.io/github/followers/junhoyeo?style=flat-square&logo=github&labelColor=black&color=24292f" width="156px" />](https://github.com/junhoyeo) | Follow [@junhoyeo](https://github.com/junhoyeo) on GitHub for more projects. Hacking on AI, infra, and everything in between. |
+> | :-----| :----- |
 
 <div align="center">
 
@@ -54,12 +62,15 @@
 | <img width="48px" src=".github/assets/client-droid.png" alt="Droid" /> | [Droid (Factory Droid)](https://factory.ai/) | `~/.factory/sessions/` | ✅ Yes |
 | <img width="48px" src=".github/assets/client-pi.png" alt="Pi" /> | [Pi](https://github.com/badlogic/pi-mono) | `~/.pi/agent/sessions/` | ✅ Yes |
 | <img width="48px" src=".github/assets/client-kimi.png" alt="Kimi" /> | [Kimi CLI](https://github.com/MoonshotAI/kimi-cli) | `~/.kimi/sessions/` | ✅ Yes |
+| <img width="48px" src=".github/assets/client-qwen.png" alt="Qwen" /> | [Qwen CLI](https://github.com/QwenLM/qwen-cli) | `~/.qwen/projects/` | ✅ Yes |
 | Roo | [Roo Code](https://github.com/RooCodeInc/Roo-Code) | `~/.config/Code/User/globalStorage/rooveterinaryinc.roo-cline/tasks/` (+ server: `~/.vscode-server/data/User/globalStorage/rooveterinaryinc.roo-cline/tasks/`) | ✅ Yes |
 | Kilo | [KiloCode](https://github.com/Kilo-Org/kilocode) | `~/.config/Code/User/globalStorage/kilocode.kilo-code/tasks/` (+ server: `~/.vscode-server/data/User/globalStorage/kilocode.kilo-code/tasks/`) | ✅ Yes |
 
 Get real-time pricing calculations using [🚅 LiteLLM's pricing data](https://github.com/BerriAI/litellm), with support for tiered pricing models and cache token discounts.
 
 ### Why "Tokscale"?
+
+[![Tokscale](./.github/assets/hero.png)](https://tokscale.ai)
 
 This project is inspired by the **[Kardashev scale](https://en.wikipedia.org/wiki/Kardashev_scale)**, a method proposed by astrophysicist Nikolai Kardashev to measure a civilization's level of technological advancement based on its energy consumption. A Type I civilization harnesses all energy available on its planet, Type II captures the entire output of its star, and Type III commands the energy of an entire galaxy.
 
@@ -118,7 +129,7 @@ In the age of AI-assisted development, **tokens are the new energy**. They power
   - GitHub-style contribution graph with 9 color themes
   - Real-time filtering and sorting
   - Zero flicker rendering (native Zig engine)
-- **Multi-platform support** - Track usage across OpenCode, Claude Code, Codex CLI, Cursor IDE, Gemini CLI, Amp, Droid, OpenClaw, Pi, Kimi CLI, Roo Code, and KiloCode
+- **Multi-platform support** - Track usage across OpenCode, Claude Code, Codex CLI, Cursor IDE, Gemini CLI, Amp, Droid, OpenClaw, Pi, Kimi CLI, Qwen CLI, Roo Code, and KiloCode
 - **Real-time pricing** - Fetches current pricing from LiteLLM with 1-hour disk cache; automatic OpenRouter fallback and Cursor model pricing for newly released models
 - **Detailed breakdowns** - Input, output, cache read/write, and reasoning token tracking
 - **Native Rust core** - All parsing and aggregation done in Rust for 10x faster processing
@@ -223,8 +234,9 @@ The interactive TUI mode provides:
 - **Keyboard Navigation**:
   - `1-4` or `←/→/Tab`: Switch views
   - `↑/↓`: Navigate lists
-  - `c/n/t`: Sort by cost/name/tokens
-  - `1-0`, `o`, `k`: Toggle sources (OpenCode/Claude/Codex/Cursor/Gemini/Amp/Droid/OpenClaw/Pi/Kimi/RooCode/KiloCode)
+  - `c/d/t`: Sort by cost/date/tokens
+  - `s`: Open source picker dialog
+  - `g`: Open group-by picker dialog (model, client+model, client+provider+model)
   - `p`: Cycle through 9 color themes
   - `r`: Refresh data
   - `e`: Export to JSON
@@ -232,6 +244,38 @@ The interactive TUI mode provides:
 - **Mouse Support**: Click tabs, buttons, and filters
 - **Themes**: Green, Halloween, Teal, Blue, Pink, Purple, Orange, Monochrome, YlGnBu
 - **Settings Persistence**: Preferences saved to `~/.config/tokscale/settings.json` (see [Configuration](#configuration))
+
+### Group-By Strategies
+
+Press `g` in the TUI or use `--group-by` in `--light`/`--json` mode to control how model rows are aggregated:
+
+| Strategy | Flag | TUI Default | Effect |
+|----------|------|-------------|--------|
+| **Model** | `--group-by model` | ✅ | One row per model — merges all clients and providers |
+| **Client + Model** | `--group-by client,model` | | One row per client-model pair |
+| **Client + Provider + Model** | `--group-by client,provider,model` | | Most granular — no merging |
+
+**`--group-by model`** (most consolidated)
+
+| Clients | Providers | Model | Cost |
+|---------|-----------|-------|------|
+| OpenCode, Claude, Amp | github-copilot, anthropic | claude-opus-4-5 | $2,424 |
+| OpenCode, Claude | anthropic, github-copilot | claude-sonnet-4-5 | $1,332 |
+
+**`--group-by client,model`** (CLI default)
+
+| Client | Provider | Model | Cost |
+|--------|----------|-------|------|
+| OpenCode | github-copilot, anthropic | claude-opus-4-5 | $1,368 |
+| Claude | anthropic | claude-opus-4-5 | $970 |
+
+**`--group-by client,provider,model`** (most granular)
+
+| Client | Provider | Model | Cost |
+|--------|----------|-------|------|
+| OpenCode | github-copilot | claude-opus-4-5 | $1,200 |
+| OpenCode | anthropic | claude-opus-4-5 | $168 |
+| Claude | anthropic | claude-opus-4-5 | $970 |
 
 ### Filtering by Platform
 
@@ -265,6 +309,9 @@ tokscale --pi
 
 # Show only Kimi CLI usage
 tokscale --kimi
+
+# Show only Qwen CLI usage
+tokscale --qwen
 
 # Show only Roo Code usage
 tokscale --roocode
@@ -521,7 +568,7 @@ The frontend provides a GitHub-style contribution graph visualization:
 - **Interactive tooltips**: Hover for detailed daily breakdowns
 - **Day breakdown panel**: Click to see per-source and per-model details
 - **Year filtering**: Navigate between years
-- **Source filtering**: Filter by platform (OpenCode, Claude, Codex, Cursor, Gemini, Amp, Droid, OpenClaw, Pi, Kimi, RooCode, KiloCode)
+- **Source filtering**: Filter by platform (OpenCode, Claude, Codex, Cursor, Gemini, Amp, Droid, OpenClaw, Pi, Kimi, Qwen, RooCode, KiloCode)
 - **Stats panel**: Total cost, tokens, active days, streaks
 - **FOUC prevention**: Theme applied before React hydrates (no flash)
 
@@ -546,6 +593,22 @@ Tokscale includes a social platform where you can share your usage data and comp
 - **Period Filtering** - View stats for all time, this month, or this week
 - **GitHub Integration** - Login with your GitHub account
 - **Local Viewer** - View your data privately without submitting
+
+### GitHub Profile Embed Widget
+
+You can embed your public Tokscale stats directly in your GitHub profile README:
+
+```md
+[![Tokscale Stats](https://tokscale.ai/api/embed/<username>/svg)](https://tokscale.ai/u/<username>)
+```
+
+- Replace `<username>` with your GitHub username
+- Optional query params:
+  - `theme=light` for a light theme
+  - `sort=tokens` (default) or `sort=cost` to control ranking basis
+  - `compact=1` to use compact layout + compact number notation (e.g., `1.2M`, `$3.4K`)
+- Example:
+  - `https://tokscale.ai/api/embed/<username>/svg?theme=light&sort=cost&compact=1`
 
 ### Getting Started
 
@@ -784,6 +847,7 @@ AI coding tools store their session data in cross-platform locations. Most tools
 | Droid | `~/.factory/` | `%USERPROFILE%\.factory\` | Same path on all platforms |
 | Pi | `~/.pi/` | `%USERPROFILE%\.pi\` | Same path on all platforms |
 | Kimi CLI | `~/.kimi/` | `%USERPROFILE%\.kimi\` | Same path on all platforms |
+| Qwen CLI | `~/.qwen/` | `%USERPROFILE%\.qwen\` | Same path on all platforms |
 | Roo Code | `~/.config/Code/User/globalStorage/rooveterinaryinc.roo-cline/tasks/` | `%USERPROFILE%\.config\Code\User\globalStorage\rooveterinaryinc.roo-cline\tasks\` | VS Code globalStorage task logs |
 | KiloCode | `~/.config/Code/User/globalStorage/kilocode.kilo-code/tasks/` | `%USERPROFILE%\.config\Code\User\globalStorage\kilocode.kilo-code\tasks\` | VS Code globalStorage task logs |
 
@@ -968,6 +1032,18 @@ wire.jsonl format with StatusUpdate messages:
 {"timestamp": 1770983426.420942, "message": {"type": "StatusUpdate", "payload": {"token_usage": {"input_other": 1562, "output": 2463, "input_cache_read": 0, "input_cache_creation": 0}, "message_id": "chatcmpl-xxx"}}}
 ```
 
+### Qwen CLI
+
+Location: `~/.qwen/projects/{PROJECT_PATH}/chats/{CHAT_ID}.jsonl`
+
+Format: JSONL — one JSON object per line, each with `type`, `model`, `timestamp`, `sessionId`, and `usageMetadata` fields.
+
+Token fields (from `usageMetadata`):
+- `promptTokenCount` → input tokens
+- `candidatesTokenCount` → output tokens
+- `thoughtsTokenCount` → reasoning/thinking tokens
+- `cachedContentTokenCount` → cached input tokens
+
 ### Roo Code
 
 Location:
@@ -1011,7 +1087,7 @@ Tokscale fetches real-time pricing from [LiteLLM's pricing database](https://git
 
 **Caching**: Pricing data is cached to disk with 1-hour TTL for fast startup:
 - LiteLLM cache: `~/.cache/tokscale/pricing-litellm.json`
-- OpenRouter cache: `~/.cache/tokscale/pricing-openrouter.json` (incremental, caches only models you've used)
+- OpenRouter cache: `~/.cache/tokscale/pricing-openrouter.json` (caches author pricing for models from supported providers)
 
 Pricing includes:
 - Input tokens

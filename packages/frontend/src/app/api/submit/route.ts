@@ -8,12 +8,12 @@ import {
   type SubmissionData,
 } from "@/lib/validation/submission";
 import {
-  mergeSourceBreakdowns,
+  mergeClientBreakdowns,
   recalculateDayTotals,
   buildModelBreakdown,
-  sourceContributionToBreakdownData,
+  clientContributionToBreakdownData,
   mergeTimestampMs,
-  type SourceBreakdownData,
+  type ClientBreakdownData,
 } from "@/lib/db/helpers";
 
 function normalizeSubmissionData(data: unknown): void {
@@ -24,12 +24,16 @@ function normalizeSubmissionData(data: unknown): void {
   for (const contribution of obj.contributions) {
     if (!contribution || typeof contribution !== "object") continue;
     const day = contribution as Record<string, unknown>;
-    if (!Array.isArray(day.sources)) continue;
-
-    for (const source of day.sources) {
-      if (!source || typeof source !== "object") continue;
-      const s = source as Record<string, unknown>;
-
+    // Handle both legacy "sources" and new "clients" formats
+    const items = Array.isArray(day.sources)
+      ? day.sources
+      : Array.isArray(day.clients)
+      ? day.clients
+      : null;
+    if (!items) continue;
+    for (const entry of items) {
+      if (!entry || typeof entry !== "object") continue;
+      const s = entry as Record<string, unknown>;
       if (s.modelId == null || typeof s.modelId !== "string") {
         s.modelId = "unknown";
       } else {
@@ -44,9 +48,9 @@ function normalizeSubmissionData(data: unknown): void {
  * POST /api/submit
  * Submit token usage data from CLI
  * 
- * IMPLEMENTS SOURCE-LEVEL MERGE:
- * - Only updates sources present in submission
- * - Preserves data for sources NOT in submission
+ * IMPLEMENTS CLIENT-LEVEL MERGE:
+ * - Only updates clients present in submission
+ * - Preserves data for clients NOT in submission
  * - Recalculates totals from dailyBreakdown
  *
  * Headers:
@@ -119,17 +123,17 @@ export async function POST(request: Request) {
       );
     }
 
-    const submittedSources = new Set<SubmissionData["summary"]["sources"][number]>(data.summary.sources);
+    const submittedClients = new Set<SubmissionData["summary"]["clients"][number]>(data.summary.clients);
     for (const contribution of data.contributions) {
-      for (const source of contribution.sources) {
-        submittedSources.add(source.source);
+      for (const client_contrib of contribution.clients) {
+        submittedClients.add(client_contrib.client);
       }
     }
     const hashData: SubmissionData = {
       ...data,
       summary: {
         ...data.summary,
-        sources: Array.from(submittedSources).sort(),
+        clients: Array.from(submittedClients).sort(),
       },
     };
 
@@ -211,7 +215,7 @@ export async function POST(request: Request) {
         inputTokens: number;
         outputTokens: number;
         timestampMs: number | null;
-        sourceBreakdown: Record<string, SourceBreakdownData>;
+        sourceBreakdown: Record<string, ClientBreakdownData>;
         modelBreakdown: Record<string, number>;
       }> = [];
 
@@ -222,15 +226,15 @@ export async function POST(request: Request) {
         inputTokens: number;
         outputTokens: number;
         timestampMs: number | null;
-        sourceBreakdown: Record<string, SourceBreakdownData>;
+        sourceBreakdown: Record<string, ClientBreakdownData>;
         modelBreakdown: Record<string, number>;
       }> = [];
 
       for (const incomingDay of data.contributions) {
-        const incomingSourceBreakdown: Record<string, SourceBreakdownData> = {};
-        for (const source of incomingDay.sources) {
-          const modelData = sourceContributionToBreakdownData(source);
-          const existing = incomingSourceBreakdown[source.source];
+        const incomingClientBreakdown: Record<string, ClientBreakdownData> = {};
+        for (const client_contrib of incomingDay.clients) {
+          const modelData = clientContributionToBreakdownData(client_contrib);
+          const existing = incomingClientBreakdown[client_contrib.client];
           if (existing) {
             existing.tokens += modelData.tokens;
             existing.cost += modelData.cost;
@@ -240,7 +244,7 @@ export async function POST(request: Request) {
             existing.cacheWrite += modelData.cacheWrite;
             existing.reasoning = (existing.reasoning || 0) + modelData.reasoning;
             existing.messages += modelData.messages;
-            const existingModel = existing.models[source.modelId];
+            const existingModel = existing.models[client_contrib.modelId];
             if (existingModel) {
               existingModel.tokens += modelData.tokens;
               existingModel.cost += modelData.cost;
@@ -251,12 +255,12 @@ export async function POST(request: Request) {
               existingModel.reasoning = (existingModel.reasoning || 0) + modelData.reasoning;
               existingModel.messages += modelData.messages;
             } else {
-              existing.models[source.modelId] = modelData;
+              existing.models[client_contrib.modelId] = modelData;
             }
           } else {
-            incomingSourceBreakdown[source.source] = {
+            incomingClientBreakdown[client_contrib.client] = {
               ...modelData,
-              models: { [source.modelId]: modelData },
+              models: { [client_contrib.modelId]: modelData },
             };
           }
         }
@@ -264,14 +268,14 @@ export async function POST(request: Request) {
         const existingDay = existingDaysMap.get(incomingDay.date);
 
         if (existingDay) {
-          const existingSourceBreakdown = (existingDay.sourceBreakdown || {}) as Record<string, SourceBreakdownData>;
-          const mergedSourceBreakdown = mergeSourceBreakdowns(
-            existingSourceBreakdown,
-            incomingSourceBreakdown,
-            submittedSources
-          );
-          const dayTotals = recalculateDayTotals(mergedSourceBreakdown);
-          const modelBreakdown = buildModelBreakdown(mergedSourceBreakdown);
+           const existingClientBreakdown = (existingDay.sourceBreakdown || {}) as Record<string, ClientBreakdownData>;
+           const mergedClientBreakdown = mergeClientBreakdowns(
+             existingClientBreakdown,
+             incomingClientBreakdown,
+             submittedClients
+           );
+          const dayTotals = recalculateDayTotals(mergedClientBreakdown);
+          const modelBreakdown = buildModelBreakdown(mergedClientBreakdown);
 
           toUpdate.push({
             id: existingDay.id,
@@ -280,12 +284,12 @@ export async function POST(request: Request) {
             inputTokens: dayTotals.inputTokens,
             outputTokens: dayTotals.outputTokens,
             timestampMs: mergeTimestampMs(existingDay.timestampMs, incomingDay.timestampMs ?? null),
-            sourceBreakdown: mergedSourceBreakdown,
+            sourceBreakdown: mergedClientBreakdown,
             modelBreakdown,
           });
         } else {
-          const dayTotals = recalculateDayTotals(incomingSourceBreakdown);
-          const modelBreakdown = buildModelBreakdown(incomingSourceBreakdown);
+          const dayTotals = recalculateDayTotals(incomingClientBreakdown);
+          const modelBreakdown = buildModelBreakdown(incomingClientBreakdown);
 
           toInsert.push({
             submissionId,
@@ -295,7 +299,7 @@ export async function POST(request: Request) {
             inputTokens: dayTotals.inputTokens,
             outputTokens: dayTotals.outputTokens,
             timestampMs: incomingDay.timestampMs ?? null,
-            sourceBreakdown: incomingSourceBreakdown,
+            sourceBreakdown: incomingClientBreakdown,
             modelBreakdown,
           });
         }
@@ -354,7 +358,7 @@ export async function POST(request: Request) {
         .from(dailyBreakdown)
         .where(eq(dailyBreakdown.submissionId, submissionId));
 
-      const allSources = new Set<string>();
+      const allClients = new Set<string>();
       const allModels = new Set<string>();
       let totalCacheRead = 0;
       let totalCacheCreation = 0;
@@ -362,19 +366,19 @@ export async function POST(request: Request) {
 
       for (const day of allDays) {
         if (day.sourceBreakdown) {
-          for (const [sourceName, sourceData] of Object.entries(day.sourceBreakdown)) {
-            allSources.add(sourceName);
-            const sd = sourceData as SourceBreakdownData;
-            if (sd.models) {
-              for (const modelId of Object.keys(sd.models)) {
+          for (const [clientName, clientData] of Object.entries(day.sourceBreakdown)) {
+            allClients.add(clientName);
+            const cd = clientData as ClientBreakdownData;
+            if (cd.models) {
+              for (const modelId of Object.keys(cd.models)) {
                 allModels.add(modelId);
               }
-            } else if (sd.modelId) {
-              allModels.add(sd.modelId);
+            } else if (cd.modelId) {
+              allModels.add(cd.modelId);
             }
-            totalCacheRead += sd.cacheRead || 0;
-            totalCacheCreation += sd.cacheWrite || 0;
-            totalReasoning += sd.reasoning || 0;
+            totalCacheRead += cd.cacheRead || 0;
+            totalCacheCreation += cd.cacheWrite || 0;
+            totalReasoning += cd.reasoning || 0;
           }
         }
       }
@@ -394,8 +398,8 @@ export async function POST(request: Request) {
           reasoningTokens: totalReasoning,
           dateStart: aggregates.dateStart,
           dateEnd: aggregates.dateEnd,
-          sourcesUsed: Array.from(allSources),
-          modelsUsed: Array.from(allModels),
+           sourcesUsed: Array.from(allClients),
+           modelsUsed: Array.from(allModels),
           cliVersion: data.meta.version,
           submissionHash: generateSubmissionHash(hashData),
           submitCount: sql`COALESCE(submit_count, 0) + 1`,
@@ -415,7 +419,7 @@ export async function POST(request: Request) {
             end: aggregates.dateEnd,
           },
           activeDays: aggregates.activeDays,
-          sources: Array.from(allSources),
+          clients: Array.from(allClients),
         },
       };
     });

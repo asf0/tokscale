@@ -4,7 +4,7 @@ import React from "react";
 import { createGlobalStyle } from "styled-components";
 import reset from "styled-reset";
 import { StyledComponentsRegistry } from "./StyledComponentsRegistry";
-import { PrimerProvider } from "./PrimerProvider";
+
 
 const GlobalStyle = createGlobalStyle`
   ${reset}
@@ -56,9 +56,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <StyledComponentsRegistry>
       <GlobalStyle />
-      <PrimerProvider>
-        {children}
-      </PrimerProvider>
+      {children}
     </StyledComponentsRegistry>
   );
 }
+

@@ -63,7 +63,7 @@ export default function ProfileNotFound() {
           <Description>
             This user doesn&apos;t exist or hasn&apos;t submitted any data yet.
           </Description>
-          <BackButton href="/">
+          <BackButton href="/leaderboard">
             Back to Leaderboard
           </BackButton>
         </ContentWrapper>

@@ -30,11 +30,12 @@ const SUPPORTED_SOURCES = [
   "openclaw",
   "pi",
   "kimi",
+  "qwen",
 ] as const;
 const SourceSchema = z.enum(SUPPORTED_SOURCES);
 
-const SourceContributionSchema = z.object({
-  source: SourceSchema,
+const ClientContributionSchema = z.object({
+  client: SourceSchema,
   modelId: z.string().min(1),
   providerId: z.string().optional(),
   tokens: TokenBreakdownSchema,
@@ -52,7 +53,7 @@ const DailyContributionSchema = z.object({
   }),
   intensity: z.number().int().min(0).max(4),
   tokenBreakdown: TokenBreakdownSchema,
-  sources: z.array(SourceContributionSchema),
+  clients: z.array(ClientContributionSchema),
 });
 
 const YearSummarySchema = z.object({
@@ -72,7 +73,7 @@ const DataSummarySchema = z.object({
   activeDays: z.number().int().min(0),
   averagePerDay: z.number().min(0),
   maxCostInSingleDay: z.number().min(0),
-  sources: z.array(SourceSchema),
+  clients: z.array(SourceSchema),
   models: z.array(z.string()),
 });
 
@@ -85,12 +86,51 @@ const ExportMetaSchema = z.object({
   }),
 });
 
-const SubmissionDataSchema = z.object({
+/**
+ * Normalize legacy payloads that use "sources"/"source" to the new "clients"/"client" keys.
+ * This ensures older CLI versions can still submit data during the rename rollout.
+ */
+function normalizeLegacySources(data: unknown): unknown {
+  if (!data || typeof data !== "object") return data;
+  const d = { ...(data as Record<string, unknown>) };
+
+  if (d.summary && typeof d.summary === "object") {
+    const summary = { ...(d.summary as Record<string, unknown>) };
+    if ("sources" in summary && !("clients" in summary)) {
+      summary.clients = summary.sources;
+      delete summary.sources;
+    }
+    d.summary = summary;
+  }
+
+  if (Array.isArray(d.contributions)) {
+    d.contributions = (d.contributions as Record<string, unknown>[]).map((c) => {
+      if (!c || typeof c !== "object") return c;
+      const contrib = { ...c };
+      if ("sources" in contrib && !("clients" in contrib)) {
+        const items = Array.isArray(contrib.sources) ? contrib.sources : [];
+        contrib.clients = (items as Record<string, unknown>[]).map((s) => {
+          if (s && typeof s === "object" && "source" in s && !("client" in s)) {
+            const { source, ...rest } = s;
+            return { client: source, ...rest };
+          }
+          return s;
+        });
+        delete contrib.sources;
+      }
+      return contrib;
+    });
+  }
+
+  return d;
+}
+
+const SubmissionDataSchema = z.preprocess(normalizeLegacySources, z.object({
   meta: ExportMetaSchema,
   summary: DataSummarySchema,
   years: z.array(YearSummarySchema),
   contributions: z.array(DailyContributionSchema),
-});
+}));
 
 export type SubmissionData = z.infer<typeof SubmissionDataSchema>;
 
@@ -177,17 +217,17 @@ export function validateSubmission(data: unknown): ValidationResult {
 
   // 3c. Day token breakdown should sum to totals
   for (const day of submission.contributions) {
-    // Check sources sum to day totals
-    if (day.sources.length > 0) {
-      const sourcesTokenSum = day.sources.reduce((sum, s) => {
-        const t = s.tokens;
+    // Check clients sum to day totals
+    if (day.clients.length > 0) {
+      const clientsTokenSum = day.clients.reduce((sum, c) => {
+        const t = c.tokens;
         return sum + t.input + t.output + t.cacheRead + t.cacheWrite + t.reasoning;
       }, 0);
 
       // Allow some tolerance
-      if (Math.abs(sourcesTokenSum - day.totals.tokens) > day.totals.tokens * 0.05 && day.totals.tokens > 100) {
+      if (Math.abs(clientsTokenSum - day.totals.tokens) > day.totals.tokens * 0.05 && day.totals.tokens > 100) {
         warnings.push(
-          `Day ${day.date}: source tokens (${sourcesTokenSum}) don't match total (${day.totals.tokens})`
+          `Day ${day.date}: client tokens (${clientsTokenSum}) don't match total (${day.totals.tokens})`
         );
       }
     }
@@ -249,10 +289,10 @@ export function validateSubmission(data: unknown): ValidationResult {
 /**
  * Generate a hash for the submission data (for deduplication)
  * 
- * CHANGED for source-level merge:
- * - Hash is now based on sources + date range (not totals)
+ * CHANGED for client-level merge:
+ * - Hash is now based on clients + date range (not totals)
  * - Totals change after merge, so they can't be in the hash
- * - This hash identifies "what sources and dates are being submitted"
+ * - This hash identifies "what clients and dates are being submitted"
  */
 export function generateSubmissionHash(data: SubmissionData): string {
   // Sort contributions by date to ensure deterministic hash
@@ -261,8 +301,8 @@ export function generateSubmissionHash(data: SubmissionData): string {
     .sort();
 
   const content = JSON.stringify({
-    // What sources are being submitted
-    sources: data.summary.sources.slice().sort(),
+    // What clients are being submitted
+    clients: data.summary.clients.slice().sort(),
     // Date range of this submission
     dateRange: data.meta.dateRange,
     // Number of days with data (for basic fingerprinting)

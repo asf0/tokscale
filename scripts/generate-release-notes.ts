@@ -201,7 +201,7 @@ function generateReleaseNotes(version: string): string {
   const lines: string[] = [
     '<div align="center">',
     "",
-    `[![Tokscale](https://github.com/${REPO}/raw/main/.github/assets/hero.png)](https://github.com/${REPO})`,
+    `[![Tokscale](https://github.com/${REPO}/raw/main/.github/assets/hero-v2.png)](https://github.com/${REPO})`,
     "",
     `# \`tokscale@v${version}\` is here!`,
     "</div>",

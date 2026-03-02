@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect, useCallback } from "react";
+import { useRef, useEffect, useCallback, useMemo } from "react";
 import styled from "styled-components";
 import type { DailyContribution, GraphColorPalette, TooltipPosition } from "@/lib/types";
 import { getGradeColor } from "@/lib/themes";
@@ -27,7 +27,7 @@ interface TokenGraph2DProps {
 
 export function TokenGraph2D({ contributions, palette, year, onDayHover, onDayClick }: TokenGraph2DProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const weeksData = groupByWeek(contributions, year);
+  const weeksData = useMemo(() => groupByWeek(contributions, year), [contributions, year]);
   const isDark = useSystemDarkMode();
 
   const getCSSVar = (varName: string): string => {

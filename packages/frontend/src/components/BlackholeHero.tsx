@@ -24,7 +24,7 @@ export function BlackholeHero() {
           width={3000}
           height={940}
           priority
-          quality={100}
+
           unoptimized
           placeholder="blur"
           style={{ width: "100%", height: "100%", backgroundColor: "black" }}
@@ -49,7 +49,7 @@ export function BlackholeHero() {
         <CommandCard>
           <CopyButton onClick={handleCopy}>
             <CopyButtonText>
-              {copied ? "Copied" : "Copy"}
+              {copied ? "Copied!" : "Copy"}
             </CopyButtonText>
           </CopyButton>
           

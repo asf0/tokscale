@@ -46,6 +46,8 @@ export function SourceLogo({ sourceId, height = 14, className = "" }: SourceLogo
         return "/assets/logos/pi.png";
       case "kimi":
         return "/assets/logos/kimi.png";
+      case "qwen":
+        return "/assets/logos/qwen.png";
       default:
         return null;
     }

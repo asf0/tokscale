@@ -5,7 +5,7 @@ import { generateRandomString } from "@/lib/auth/utils";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const returnTo = searchParams.get("returnTo") || "/";
+  const returnTo = searchParams.get("returnTo") || "/leaderboard";
 
   // Generate CSRF state
   const state = generateRandomString(32);

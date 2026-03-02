@@ -1,0 +1,195 @@
+name: Test & Coverage
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: clippy-${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            clippy-${{ runner.os }}-cargo-
+
+      - name: Run Clippy
+        run: cargo clippy --workspace --all-features -- -D warnings
+
+  fmt:
+    name: Format Check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Only check out the PR branch for same-repo PRs (forks use default merge ref)
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref || '' }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Check formatting
+        id: fmt-check
+        run: |
+          if ! cargo fmt --all -- --check; then
+            # Auto-fix only for same-repo PRs; fail hard for pushes and fork PRs
+            if [ "${{ github.event_name }}" != "pull_request" ] || [ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]; then
+              exit 1
+            fi
+            echo "needs_fix=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Apply formatting fix
+        if: steps.fmt-check.outputs.needs_fix == 'true'
+        run: cargo fmt --all
+
+      - name: Commit formatting fix
+        if: steps.fmt-check.outputs.needs_fix == 'true'
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add -A
+          git diff --staged --quiet || git commit -m "style: cargo fmt [skip ci]"
+          git pull --rebase origin "${{ github.head_ref }}"
+          git push origin "HEAD:${{ github.head_ref }}"
+
+  coverage:
+    name: Code Coverage
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: coverage-${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            coverage-${{ runner.os }}-cargo-
+
+      - name: Install cargo-tarpaulin
+        uses: taiki-e/install-action@cargo-tarpaulin
+
+      - name: Generate coverage report
+        run: |
+          cargo tarpaulin \
+            --workspace \
+            --all-features \
+            --out Xml \
+            --output-dir ./coverage \
+            --timeout 300 \
+            --verbose
+
+      - name: Generate coverage JSON
+        run: |
+          cargo tarpaulin \
+            --workspace \
+            --out Json \
+            --output-dir ./coverage \
+            --timeout 300
+
+      - name: Extract coverage percentage
+        id: coverage
+        run: |
+          # Compute total covered / total coverable (not average of per-file percentages)
+          # Guards against division by zero and NaN from files with coverable=0
+          COVERAGE=$(cat ./coverage/tarpaulin.json | jq -r '
+            .files | to_entries | map(.value) |
+            (map(.covered) | add) as $total_covered |
+            (map(.coverable) | add) as $total_coverable |
+            if $total_coverable > 0 then 
+              ($total_covered / $total_coverable * 100)
+            else 
+              0 
+            end
+          ')
+          COVERAGE_INT=$(printf "%.0f" $COVERAGE)
+          echo "percentage=$COVERAGE" >> $GITHUB_OUTPUT
+          echo "percentage_int=$COVERAGE_INT" >> $GITHUB_OUTPUT
+          echo "Coverage: $COVERAGE%"
+          
+          # Determine badge color
+          if [ $COVERAGE_INT -gt 80 ]; then
+            echo "color=green" >> $GITHUB_OUTPUT
+          elif [ $COVERAGE_INT -gt 60 ]; then
+            echo "color=yellow" >> $GITHUB_OUTPUT
+          elif [ $COVERAGE_INT -gt 40 ]; then
+            echo "color=orange" >> $GITHUB_OUTPUT
+          else
+            echo "color=red" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create badges directory
+        run: mkdir -p .github/badges
+
+      - name: Generate coverage badge
+        uses: emibcn/badge-action@v2.0.3
+        with:
+          label: 'coverage'
+          status: ${{ steps.coverage.outputs.percentage_int }}%
+          color: ${{ steps.coverage.outputs.color }}
+          path: .github/badges/coverage.svg
+
+      - name: Commit coverage badge
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add .github/badges/coverage.svg
+          git diff --quiet && git diff --staged --quiet || (git commit -m "ci: update coverage badge [skip ci]" && git push)
+
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: ./coverage/
+          retention-days: 7

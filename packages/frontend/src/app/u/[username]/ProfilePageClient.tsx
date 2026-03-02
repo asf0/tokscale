@@ -17,7 +17,7 @@ import {
   type ProfileTab,
   type ModelUsage,
 } from "@/components/profile";
-import type { TokenContributionData, DailyContribution, SourceType } from "@/lib/types";
+import type { TokenContributionData, DailyContribution, ClientType } from "@/lib/types";
 
 interface ProfileData {
   user: {
@@ -43,7 +43,7 @@ interface ProfileData {
     end: string | null;
   };
   updatedAt: string | null;
-  sources: string[];
+  clients: string[];
   models: string[];
   modelUsage?: ModelUsage[];
   contributions: DailyContribution[];
@@ -110,7 +110,7 @@ export default function ProfilePageClient({ initialData, username }: ProfilePage
         activeDays: data.stats.activeDays,
         averagePerDay: data.stats.activeDays > 0 ? totalCost / data.stats.activeDays : 0,
         maxCostInSingleDay: maxCost,
-        sources: data.sources as SourceType[],
+        clients: data.clients as ClientType[],
         models: data.models,
       },
       years,

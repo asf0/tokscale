@@ -1,4 +1,4 @@
-export type SourceType = "opencode" | "claude" | "codex" | "gemini" | "cursor" | "amp" | "droid" | "openclaw" | "pi" | "kimi";
+export type ClientType = "opencode" | "claude" | "codex" | "gemini" | "cursor" | "amp" | "droid" | "openclaw" | "pi" | "kimi" | "qwen";
 
 export interface TokenBreakdown {
   input: number;
@@ -10,7 +10,7 @@ export interface TokenBreakdown {
 
 /**
  * Model-level usage data (used in database storage format)
- * When data comes from the database, sources are grouped with nested models
+ * When data comes from the database, clients are grouped with nested models
  */
 export interface ModelBreakdownData {
   tokens: number;
@@ -24,20 +24,20 @@ export interface ModelBreakdownData {
 }
 
 /**
- * Per-source contribution
+ * Per-client contribution
  * 
  * Two formats exist:
- * 1. CLI format: Each source/model combo is a separate entry (modelId set, no models field)
- * 2. Database format: Sources grouped with nested models (models field populated)
+ * 1. CLI format: Each client/model combo is a separate entry (modelId set, no models field)
+ * 2. Database format: Clients grouped with nested models (models field populated)
  */
-export interface SourceContribution {
-  source: SourceType;
+export interface ClientContribution {
+  client: ClientType;
   modelId: string;
   providerId?: string;
   tokens: TokenBreakdown;
   cost: number;
   messages: number;
-  /** Present when data comes from database (grouped by source with nested models) */
+  /** Present when data comes from database (grouped by client with nested models) */
   models?: Record<string, ModelBreakdownData>;
 }
 
@@ -51,7 +51,7 @@ export interface DailyContribution {
   };
   intensity: 0 | 1 | 2 | 3 | 4;
   tokenBreakdown: TokenBreakdown;
-  sources: SourceContribution[];
+  clients: ClientContribution[];
 }
 
 export interface YearSummary {
@@ -71,7 +71,7 @@ export interface DataSummary {
   activeDays: number;
   averagePerDay: number;
   maxCostInSingleDay: number;
-  sources: SourceType[];
+  clients: ClientType[];
   models: string[];
 }
 
@@ -125,7 +125,7 @@ export interface GraphState {
   hoveredDay: DailyContribution | null;
   selectedDay: DailyContribution | null;
   tooltipPosition: TooltipPosition | null;
-  sourceFilter: SourceType[];
+  clientFilter: ClientType[];
   modelFilter: string[];
 }
 

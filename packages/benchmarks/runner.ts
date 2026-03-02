@@ -76,7 +76,7 @@ interface BenchmarkResult {
     totalFiles: number;
     totalMessages: number;
     totalDays: number;
-    sources: string[];
+    clients: string[];
   };
 }
 
@@ -205,7 +205,7 @@ async function runGraphGenerationRust(syntheticPath?: string): Promise<{
   // Two-phase approach: parse local files, then finalize with empty pricing (no network)
   // This benchmarks pure file parsing + aggregation performance without network latency
   const localMessages = parseLocalSourcesNative({
-    sources: ['opencode', 'claude', 'codex', 'gemini'], // No cursor - it's network-synced
+    clients: ['opencode', 'claude', 'codex', 'gemini'], // No cursor - it's network-synced
   });
   
   const data = finalizeGraphNative({
@@ -399,7 +399,7 @@ async function runBenchmark(config: BenchmarkConfig): Promise<BenchmarkResult> {
       totalFiles: 0, // TODO: count files
       totalMessages,
       totalDays: lastData?.contributions.length ?? 0,
-      sources: lastData?.summary.sources ?? [],
+      clients: lastData?.summary.clients ?? [],
     },
   };
   
@@ -425,7 +425,7 @@ function printSummary(result: BenchmarkResult): void {
   console.log("  ├─────────────────────────────────────────────┤");
   console.log(`  │ Messages Processed:       ${String(result.data.totalMessages).padStart(14)} │`);
   console.log(`  │ Days with Data:           ${String(result.data.totalDays).padStart(14)} │`);
-  console.log(`  │ Sources:                  ${result.data.sources.join(", ").padStart(14)} │`);
+  console.log(`  │ Clients:                  ${result.data.clients.join(", ").padStart(14)} │`);
   console.log("  └─────────────────────────────────────────────┘");
   console.log();
 }

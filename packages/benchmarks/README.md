@@ -42,7 +42,7 @@ bunx benchmarks/generate.ts --output /tmp/bench-data
 ```
 
 **Default data volume:**
-| Source   | Files | Messages |
+| Client   | Files | Messages |
 |----------|-------|----------|
 | OpenCode | 500   | 500      |
 | Claude   | 50    | 2,500    |
@@ -137,7 +137,7 @@ Example:
   "data": {
     "totalMessages": 18671,
     "totalDays": 19,
-    "sources": ["claude", "gemini", "opencode"]
+    "clients": ["claude", "gemini", "opencode"]
   }
 }
 ```

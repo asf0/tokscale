@@ -1,5 +1,5 @@
 /**
- * Source-level merge helpers for submission API
+ * Client-level merge helpers for submission API
  */
 
 export interface ModelBreakdownData {
@@ -13,7 +13,7 @@ export interface ModelBreakdownData {
   messages: number;
 }
 
-export interface SourceBreakdownData {
+export interface ClientBreakdownData {
   tokens: number;
   cost: number;
   input: number;
@@ -38,7 +38,7 @@ export interface DayTotals {
 }
 
 export function recalculateDayTotals(
-  sourceBreakdown: Record<string, SourceBreakdownData>
+  clientBreakdown: Record<string, ClientBreakdownData>
 ): DayTotals {
   let tokens = 0;
   let cost = 0;
@@ -48,14 +48,14 @@ export function recalculateDayTotals(
   let cacheWriteTokens = 0;
   let reasoningTokens = 0;
 
-  for (const source of Object.values(sourceBreakdown)) {
-    tokens += source.tokens || 0;
-    cost += source.cost || 0;
-    inputTokens += source.input || 0;
-    outputTokens += source.output || 0;
-    cacheReadTokens += source.cacheRead || 0;
-    cacheWriteTokens += source.cacheWrite || 0;
-    reasoningTokens += source.reasoning || 0;
+  for (const client of Object.values(clientBreakdown)) {
+    tokens += client.tokens || 0;
+    cost += client.cost || 0;
+    inputTokens += client.input || 0;
+    outputTokens += client.output || 0;
+    cacheReadTokens += client.cacheRead || 0;
+    cacheWriteTokens += client.cacheWrite || 0;
+    reasoningTokens += client.reasoning || 0;
   }
 
   return {
@@ -69,18 +69,18 @@ export function recalculateDayTotals(
   };
 }
 
-export function mergeSourceBreakdowns(
-  existing: Record<string, SourceBreakdownData> | null | undefined,
-  incoming: Record<string, SourceBreakdownData>,
-  incomingSources: Set<string>
-): Record<string, SourceBreakdownData> {
-  const merged: Record<string, SourceBreakdownData> = { ...(existing || {}) };
+export function mergeClientBreakdowns(
+  existing: Record<string, ClientBreakdownData> | null | undefined,
+  incoming: Record<string, ClientBreakdownData>,
+  incomingClients: Set<string>
+): Record<string, ClientBreakdownData> {
+  const merged: Record<string, ClientBreakdownData> = { ...(existing || {}) };
 
-  for (const sourceName of incomingSources) {
-    if (incoming[sourceName]) {
-      merged[sourceName] = { ...incoming[sourceName] };
+  for (const clientName of incomingClients) {
+    if (incoming[clientName]) {
+      merged[clientName] = { ...incoming[clientName] };
     } else {
-      delete merged[sourceName];
+      delete merged[clientName];
     }
   }
 
@@ -88,41 +88,41 @@ export function mergeSourceBreakdowns(
 }
 
 export function buildModelBreakdown(
-  sourceBreakdown: Record<string, SourceBreakdownData>
+  clientBreakdown: Record<string, ClientBreakdownData>
 ): Record<string, number> {
   const result: Record<string, number> = {};
 
-  for (const source of Object.values(sourceBreakdown)) {
-    if (source.models) {
-      for (const [modelId, modelData] of Object.entries(source.models)) {
+  for (const client of Object.values(clientBreakdown)) {
+    if (client.models) {
+      for (const [modelId, modelData] of Object.entries(client.models)) {
         result[modelId] = (result[modelId] || 0) + modelData.tokens;
       }
-    } else if (source.modelId) {
-      result[source.modelId] = (result[source.modelId] || 0) + source.tokens;
+    } else if (client.modelId) {
+      result[client.modelId] = (result[client.modelId] || 0) + client.tokens;
     }
   }
 
   return result;
 }
 
-export function sourceContributionToBreakdownData(
-  source: {
+export function clientContributionToBreakdownData(
+  client_contrib: {
     tokens: { input: number; output: number; cacheRead: number; cacheWrite: number; reasoning?: number };
     cost: number;
     modelId: string;
     messages: number;
   }
 ): ModelBreakdownData {
-  const { input, output, cacheRead, cacheWrite, reasoning = 0 } = source.tokens;
+  const { input, output, cacheRead, cacheWrite, reasoning = 0 } = client_contrib.tokens;
   return {
     tokens: input + output + cacheRead + cacheWrite + reasoning,
-    cost: source.cost,
+    cost: client_contrib.cost,
     input,
     output,
     cacheRead,
     cacheWrite,
     reasoning,
-    messages: source.messages,
+    messages: client_contrib.messages,
   };
 }
 

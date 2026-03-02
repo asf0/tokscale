@@ -105,10 +105,10 @@ export async function GET(request: Request) {
     await setSessionCookie(sessionToken);
 
     // Redirect to return URL
-    const returnTo = storedState.returnTo || "/";
+    const returnTo = storedState.returnTo || "/leaderboard";
     return NextResponse.redirect(`${baseUrl}${returnTo}`);
   } catch (err) {
     console.error("GitHub OAuth callback error:", err);
-    return NextResponse.redirect(`${baseUrl}/?error=auth_failed`);
+    return NextResponse.redirect(`${baseUrl}/leaderboard?error=auth_failed`);
   }
 }

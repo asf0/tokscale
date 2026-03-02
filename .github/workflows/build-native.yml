@@ -4,13 +4,14 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
-      - "packages/core/**"
-      - "!packages/core/package.json"
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
 
 env:
-  DEBUG: napi:*
-  APP_NAME: tokscale-core
   MACOSX_DEPLOYMENT_TARGET: "10.13"
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
 
 jobs:
   build:
@@ -22,61 +23,47 @@ jobs:
         settings:
           - host: macos-latest
             target: x86_64-apple-darwin
-            build: |
-              cd packages/core
-              bun run build:platform --target x86_64-apple-darwin
-              strip -x *.node
+            build: cargo build --release -p tokscale-cli --target x86_64-apple-darwin
+            strip: strip -x target/x86_64-apple-darwin/release/tokscale
+            bin_name: tokscale
           - host: macos-latest
             target: aarch64-apple-darwin
-            build: |
-              cd packages/core
-              bun run build:platform --target aarch64-apple-darwin
-              strip -x *.node
+            build: cargo build --release -p tokscale-cli --target aarch64-apple-darwin
+            strip: strip -x target/aarch64-apple-darwin/release/tokscale
+            bin_name: tokscale
           - host: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            build: |
-              cd packages/core
-              cargo zigbuild --release --target x86_64-unknown-linux-gnu.2.17
-              cp target/x86_64-unknown-linux-gnu/release/libtokscale_core.so tokscale-core.linux-x64-gnu.node
+            build: cargo zigbuild --release -p tokscale-cli --target x86_64-unknown-linux-gnu
+            strip: strip target/x86_64-unknown-linux-gnu/release/tokscale
+            bin_name: tokscale
           - host: ubuntu-latest
             target: x86_64-unknown-linux-musl
-            build: |
-              cd packages/core
-              bun run build:platform --target x86_64-unknown-linux-musl -x
+            build: cargo zigbuild --release -p tokscale-cli --target x86_64-unknown-linux-musl
+            strip: strip target/x86_64-unknown-linux-musl/release/tokscale
+            bin_name: tokscale
           - host: ubuntu-latest
             target: aarch64-unknown-linux-gnu
-            build: |
-              cd packages/core
-              cargo zigbuild --release --target aarch64-unknown-linux-gnu.2.17
-              cp target/aarch64-unknown-linux-gnu/release/libtokscale_core.so tokscale-core.linux-arm64-gnu.node
+            build: cargo zigbuild --release -p tokscale-cli --target aarch64-unknown-linux-gnu
+            strip: ""
+            bin_name: tokscale
           - host: ubuntu-latest
             target: aarch64-unknown-linux-musl
-            build: |
-              cd packages/core
-              bun run build:platform --target aarch64-unknown-linux-musl -x
+            build: cargo zigbuild --release -p tokscale-cli --target aarch64-unknown-linux-musl
+            strip: ""
+            bin_name: tokscale
           - host: windows-latest
             target: x86_64-pc-windows-msvc
-            build: |
-              cd packages/core
-              bun run build:platform
+            build: cargo build --release -p tokscale-cli --target x86_64-pc-windows-msvc
+            strip: ""
+            bin_name: tokscale.exe
           - host: windows-latest
             target: aarch64-pc-windows-msvc
-            build: |
-              cd packages/core
-              bun run build:platform --target aarch64-pc-windows-msvc
+            build: cargo build --release -p tokscale-cli --target aarch64-pc-windows-msvc
+            strip: ""
+            bin_name: tokscale.exe
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.1.38
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -91,10 +78,8 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            ~/.napi-rs
-            .cargo-cache
-            packages/core/target/
-          key: ${{ matrix.settings.target }}-cargo-${{ matrix.settings.host }}-${{ hashFiles('packages/core/Cargo.lock') }}
+            target/
+          key: cli-${{ matrix.settings.target }}-cargo-${{ matrix.settings.host }}-${{ hashFiles('Cargo.lock') }}
 
       - uses: mlugg/setup-zig@v2
         if: ${{ contains(matrix.settings.target, 'linux') }}
@@ -109,17 +94,18 @@ jobs:
         with:
           tool: cargo-zigbuild
 
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-        working-directory: packages/core
-
-      - name: Build
+      - name: Build CLI binary
         run: ${{ matrix.settings.build }}
         shell: bash
+
+      - name: Strip CLI binary
+        if: ${{ matrix.settings.strip != '' }}
+        shell: bash
+        run: ${{ matrix.settings.strip }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: bindings-${{ matrix.settings.target }}
-          path: packages/core/*.node
+          name: cli-binary-${{ matrix.settings.target }}
+          path: target/${{ matrix.settings.target }}/release/${{ matrix.settings.bin_name }}
           if-no-files-found: error

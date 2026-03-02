@@ -8,16 +8,14 @@
     "packages/*"
   ],
   "scripts": {
-    "postinstall": "if [ -z \"$VERCEL\" ]; then bun run build:core; else echo 'Skipping core build on Vercel'; fi",
-    "build": "bun run build:core && bun run build:cli",
+    "build": "cargo build --release -p tokscale-cli && bun run build:cli",
     "build:cli": "bun run --cwd packages/cli build",
-    "build:core": "bun run --cwd packages/core build",
+    "build:core": "cargo build --release -p tokscale-cli",
     "cli": "./scripts/cli.sh",
     "dev:frontend": "bun run --cwd packages/frontend dev",
     "dev:benchmarks": "bun run --cwd packages/benchmarks run"
   },
   "devDependencies": {
-    "@napi-rs/cli": "^3.4.1",
     "@resvg/resvg-js": "^2.6.2",
     "@types/node": "^20.0.0",
     "typescript": "^5.0.0"

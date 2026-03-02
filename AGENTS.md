@@ -2,6 +2,11 @@
 
 AI-agent knowledge base for the tokscale project.
 
+## Agent Command Execution
+
+- When running `tokscale` CLI commands from an automated agent (tests, CI, or tool-driven shells), always pass `--no-spinner` unless spinner behavior is the thing being tested.
+- This avoids non-interactive terminal issues and keeps command output stable for assertions and logs.
+
 ## Release & Deployment
 
 ### Overview
@@ -22,16 +27,16 @@ Releases are published to npm via a GitHub Actions `workflow_dispatch` pipeline,
 
 | # | Job | Description |
 |---|-----|-------------|
-| 1 | `bump-versions` | Reads current version from `packages/core/package.json`, calculates new version, updates all 3 `package.json` files (`core`, `cli`, `tokscale` wrapper), uploads as artifact |
-| 2 | `build` | 8-target parallel native Rust builds via NAPI-RS (macOS x86/arm64, Linux glibc/musl x86/arm64, Windows x86/arm64) |
-| 3 | `publish-core` | Collects all `.node` binaries + NAPI-generated `index.js`/`index.d.ts`, publishes `@tokscale/core` to npm |
-| 4 | `publish-cli` | Installs deps, builds CLI TypeScript, publishes `@tokscale/cli` to npm |
+| 1 | `bump-versions` | Reads current version from `packages/cli/package.json`, calculates new version, updates all platform package.json files + CLI + wrapper, uploads as artifact |
+| 2 | `build-cli-binary` | 8-target parallel native Rust builds (macOS x86/arm64, Linux glibc/musl x86/arm64, Windows x86/arm64) |
+| 3 | `publish-platform-packages` | Publishes platform-specific packages (`@tokscale/cli-darwin-arm64`, etc.) containing native binaries to npm |
+| 4 | `publish-cli` | Publishes `@tokscale/cli` to npm (binary dispatcher + optionalDependencies) |
 | 5 | `publish-alias` | Publishes `tokscale` wrapper package to npm |
-| 6 | `finalize` | Commits bumped `package.json` files + NAPI-generated files back to repo as `chore: bump version to X.Y.Z` (authored by `github-actions[bot]`) |
+| 6 | `finalize` | Commits bumped `package.json` files back to repo as `chore: bump version to X.Y.Z` (authored by `github-actions[bot]`) |
 
 **Duration:** ~15-20 minutes end-to-end.
 
-**Package publish chain:** `@tokscale/core` → `@tokscale/cli` (depends on core) → `tokscale` (depends on cli). Each waits for the previous to succeed.
+**Package publish chain:** `@tokscale/cli` (with platform packages as optionalDependencies) → `tokscale` (depends on cli). Each waits for the previous to succeed.
 
 ### Post-Pipeline: Git Tag & GitHub Release
 
@@ -54,13 +59,13 @@ The CI pipeline does **NOT** create the git tag or GitHub Release. After the wor
 | `major` | Breaking changes (never used so far) | `1.2.1` → `2.0.0` |
 
 Version is stored in 3 places (all updated by CI):
-- `packages/core/package.json` — source of truth
-- `packages/cli/package.json` — version + `@tokscale/core` dependency version
+- `packages/cli/package.json` — source of truth
+- Platform packages (`packages/cli-*/package.json`) — version synced
 - `packages/tokscale/package.json` — version + `@tokscale/cli` dependency version
 
 ### CI-Only Workflow
 
-**`.github/workflows/build-native.yml`** — Runs on PRs touching `packages/core/**` (excluding `package.json`). Builds all 8 native targets to verify compilation. Does not publish.
+**`.github/workflows/build-native.yml`** — Runs on PRs touching `crates/tokscale-cli/**`. Builds all 8 native targets to verify compilation. Does not publish.
 
 ---
 
@@ -84,7 +89,7 @@ Version is stored in 3 places (all updated by CI):
 ```markdown
 <div align="center">
 
-[![Tokscale](https://github.com/junhoyeo/tokscale/raw/main/.github/assets/hero.png)](https://github.com/junhoyeo/tokscale)
+[![Tokscale](https://github.com/junhoyeo/tokscale/raw/main/.github/assets/hero-v2.png)](https://github.com/junhoyeo/tokscale)
 
 # `tokscale@vX.Y.Z` is here!
 </div>
@@ -130,13 +135,13 @@ Add a short bullet list summary (before "What's Changed") when:
 
 ```
 1. [ ] All target PRs merged to main
-2. [ ] `cargo test` passes in packages/core
+2. [ ] `cargo test` passes in crates/tokscale-cli
 3. [ ] No open blocker bugs (regressions from changes being released)
 4. [ ] Run "Publish" workflow via GitHub Actions UI
    - Select bump type (patch/minor/major)
    - Wait for all 6 stages to complete
 5. [ ] Verify `chore: bump version to X.Y.Z` commit was pushed
-6. [ ] Verify packages on npm: @tokscale/core, @tokscale/cli, tokscale
+6. [ ] Verify packages on npm: @tokscale/cli, tokscale
 7. [ ] Create GitHub Release
    - Tag: vX.Y.Z targeting the bump commit
    - Write release notes following the template above

@@ -6,6 +6,8 @@ dist/
 packages/benchmarks/results/*
 !packages/benchmarks/results/.gitkeep
 packages/benchmarks/synthetic-data/
+coverage/
+
 # Legacy paths (keep for safety)
 benchmarks/results/*
 !benchmarks/results/.gitkeep
@@ -25,3 +27,5 @@ opencodetmp/
 notepad.md
 ai-todolist.md
 *.tgz
+.sisyphus
+crates/tokscale-cli/tokscale-export-*.json

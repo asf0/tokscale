@@ -1,0 +1,101 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getUserEmbedStats, type EmbedSortBy } from "@/lib/embed/getUserEmbedStats";
+import {
+  renderProfileEmbedErrorSvg,
+  renderProfileEmbedSvg,
+  type EmbedTheme,
+} from "@/lib/embed/renderProfileEmbedSvg";
+import { isValidGitHubUsername } from "@/lib/validation/username";
+
+export const revalidate = 60;
+
+function parseTheme(searchParams: URLSearchParams): EmbedTheme {
+  return searchParams.get("theme") === "light" ? "light" : "dark";
+}
+
+function parseCompact(searchParams: URLSearchParams): boolean {
+  const value = searchParams.get("compact");
+  return value === "1" || value === "true";
+}
+
+function parseSort(searchParams: URLSearchParams): EmbedSortBy {
+  const value = searchParams.get("sort");
+  return value === "cost" ? "cost" : "tokens";
+}
+
+function createSvgResponse(svg: string, init?: { status?: number; cacheControl?: string }) {
+  return new NextResponse(svg, {
+    status: init?.status ?? 200,
+    headers: {
+      "Content-Type": "image/svg+xml; charset=utf-8",
+      "Cache-Control": init?.cacheControl ?? "public, max-age=0, s-maxage=60, stale-while-revalidate=300",
+      "X-Content-Type-Options": "nosniff",
+      "Content-Security-Policy": "default-src 'none'; img-src data:; style-src 'unsafe-inline';",
+    },
+  });
+}
+
+interface RouteParams {
+  params: Promise<{ username: string }>;
+}
+
+export async function GET(request: NextRequest, { params }: RouteParams) {
+  const startedAt = Date.now();
+  const { username } = await params;
+  const { searchParams } = new URL(request.url);
+
+  const theme = parseTheme(searchParams);
+  const compact = parseCompact(searchParams);
+  const sortBy = parseSort(searchParams);
+
+  if (!isValidGitHubUsername(username)) {
+    const svg = renderProfileEmbedErrorSvg("Invalid username format", { theme, compact: true });
+    return createSvgResponse(svg, { status: 400, cacheControl: "no-store" });
+  }
+
+  try {
+    const data = await getUserEmbedStats(username, sortBy);
+
+    if (!data) {
+      const svg = renderProfileEmbedErrorSvg(`User @${username} was not found`, {
+        theme,
+        compact,
+      });
+      return createSvgResponse(svg, { status: 200 });
+    }
+
+    const svg = renderProfileEmbedSvg(data, {
+      theme,
+      compact,
+      compactNumbers: compact,
+      sortBy,
+    });
+
+    console.info("[embed-svg] success", {
+      username,
+      status: 200,
+      durationMs: Date.now() - startedAt,
+      compact,
+      sortBy,
+      theme,
+    });
+
+    return createSvgResponse(svg);
+  } catch (error) {
+    console.error("[embed-svg] failed", {
+      username,
+      durationMs: Date.now() - startedAt,
+      error: error instanceof Error ? error.message : "unknown_error",
+    });
+
+    const svg = renderProfileEmbedErrorSvg("Tokscale stats are temporarily unavailable", {
+      theme,
+      compact,
+    });
+
+    return createSvgResponse(svg, {
+      status: 500,
+      cacheControl: "no-store",
+    });
+  }
+}

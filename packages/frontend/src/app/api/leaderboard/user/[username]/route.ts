@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUserRank, type Period, type SortBy } from "@/lib/leaderboard/getLeaderboard";
+import { isValidGitHubUsername } from "@/lib/validation/username";
 
 export const revalidate = 60;
 
@@ -13,7 +14,7 @@ export async function GET(
   try {
     const { username } = await params;
 
-    if (!username || !/^[a-zA-Z0-9-]{1,39}$/.test(username)) {
+    if (!username || !isValidGitHubUsername(username)) {
       return NextResponse.json(
         { error: "Invalid username format" },
         { status: 400 }

@@ -5,9 +5,11 @@ import ProfilePageClient from './ProfilePageClient';
 export const revalidate = 60;
 
 async function getProfileData(username: string) {
-  const baseUrl = process.env.NEXT_PUBLIC_URL 
+  // In production: use explicit URL or Vercel auto-URL.
+  // In dev: use 127.0.0.1 to avoid ECONNREFUSED from localhost dual-stack DNS.
+  const baseUrl = process.env.NEXT_PUBLIC_URL
     || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null)
-    || 'http://localhost:3000';
+    || 'http://127.0.0.1:3000';
   
   const res = await fetch(`${baseUrl}/api/users/${username}`, {
     next: { revalidate: 60 },

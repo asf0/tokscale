@@ -1,8 +1,8 @@
 "use client";
 
 import styled from "styled-components";
-import type { DailyContribution, GraphColorPalette, SourceType } from "@/lib/types";
-import { formatCurrency, formatTokenCount, groupSourcesByType, sortSourcesByCost } from "@/lib/utils";
+import type { DailyContribution, GraphColorPalette, ClientType } from "@/lib/types";
+import { formatCurrency, formatTokenCount, groupClientsByType, sortClientsByCost } from "@/lib/utils";
 import { formatContributionDateFull } from "@/lib/date-utils";
 import { SOURCE_DISPLAY_NAMES, SOURCE_COLORS } from "@/lib/constants";
 import { SourceLogo } from "./SourceLogo";
@@ -118,8 +118,8 @@ const SummaryTotalValue = styled(SummaryValue)`
 export function BreakdownPanel({ day, onClose, palette }: BreakdownPanelProps) {
   if (!day) return null;
 
-  const groupedSources = groupSourcesByType(day.sources);
-  const sortedSourceTypes = Array.from(groupedSources.keys()).sort();
+  const groupedClients = groupClientsByType(day.clients);
+  const sortedClientTypes = Array.from(groupedClients.keys()).sort();
 
   return (
     <PanelContainer
@@ -144,41 +144,41 @@ export function BreakdownPanel({ day, onClose, palette }: BreakdownPanelProps) {
       </PanelHeader>
 
       <PanelContent>
-        {day.sources.length === 0 ? (
+        {day.clients.length === 0 ? (
           <EmptyState style={{ color: "var(--color-fg-muted)" }}>
             No activity on this day
           </EmptyState>
         ) : (
           <SourceList>
-            {sortedSourceTypes.map((sourceType) => {
-              const sources = sortSourcesByCost(groupedSources.get(sourceType) || []);
-              const sourceTotalCost = sources.reduce((sum, s) => sum + s.cost, 0);
+            {sortedClientTypes.map((clientType) => {
+              const clients = sortClientsByCost(groupedClients.get(clientType) || []);
+              const clientTotalCost = clients.reduce((sum, c) => sum + c.cost, 0);
               return (
-                <SourceSection key={sourceType} sourceType={sourceType} sources={sources} totalCost={sourceTotalCost} palette={palette} />
+                <ClientSection key={clientType} clientType={clientType} clients={clients} totalCost={clientTotalCost} palette={palette} />
               );
             })}
           </SourceList>
         )}
 
-        {day.sources.length > 0 && (
+        {day.clients.length > 0 && (
           <SummaryFooter style={{ borderColor: "var(--color-border-default)" }}>
             <SummaryItem style={{ color: "var(--color-fg-muted)" }}>
               Total: <SummaryTotalValue style={{ color: "var(--color-fg-default)" }}>{formatCurrency(day.totals.cost)}</SummaryTotalValue>
             </SummaryItem>
             <SummaryItem style={{ color: "var(--color-fg-muted)" }}>
-              across <SummaryValue style={{ color: "var(--color-fg-default)" }}>{sortedSourceTypes.length} source{sortedSourceTypes.length !== 1 ? "s" : ""}</SummaryValue>
+              across <SummaryValue style={{ color: "var(--color-fg-default)" }}>{sortedClientTypes.length} client{sortedClientTypes.length !== 1 ? "s" : ""}</SummaryValue>
             </SummaryItem>
             <SummaryItem style={{ color: "var(--color-fg-muted)" }}>
               <SummaryValue style={{ color: "var(--color-fg-default)" }}>
                 {(() => {
                   const allModels = new Set<string>();
-                  for (const s of day.sources) {
-                    if (s.models) {
-                      for (const modelId of Object.keys(s.models)) {
+                  for (const c of day.clients) {
+                    if (c.models) {
+                      for (const modelId of Object.keys(c.models)) {
                         allModels.add(modelId);
                       }
-                    } else if (s.modelId) {
-                      allModels.add(s.modelId);
+                    } else if (c.modelId) {
+                      allModels.add(c.modelId);
                     }
                   }
                   const count = allModels.size;
@@ -193,9 +193,9 @@ export function BreakdownPanel({ day, onClose, palette }: BreakdownPanelProps) {
   );
 }
 
-interface SourceSectionProps {
-  sourceType: SourceType;
-  sources: DailyContribution["sources"];
+interface ClientSectionProps {
+  clientType: ClientType;
+  clients: DailyContribution["clients"];
   totalCost: number;
   palette: GraphColorPalette;
 }
@@ -234,13 +234,13 @@ const ModelsList = styled.div`
   gap: 0.75rem;
 `;
 
-function SourceSection({ sourceType, sources, totalCost, palette }: SourceSectionProps) {
-  const sourceColor = SOURCE_COLORS[sourceType] || palette.grade3;
+function ClientSection({ clientType, clients, totalCost, palette }: ClientSectionProps) {
+  const clientColor = SOURCE_COLORS[clientType] || palette.grade3;
 
   const modelEntries: Array<{ modelId: string; cost: number; messages: number; tokens: { input: number; output: number; cacheRead: number; cacheWrite: number; reasoning: number } }> = [];
-  for (const source of sources) {
-    if (source.models && Object.keys(source.models).length > 0) {
-      for (const [modelId, data] of Object.entries(source.models)) {
+  for (const client_contrib of clients) {
+    if (client_contrib.models && Object.keys(client_contrib.models).length > 0) {
+      for (const [modelId, data] of Object.entries(client_contrib.models)) {
         modelEntries.push({
           modelId,
           cost: data.cost || 0,
@@ -254,12 +254,12 @@ function SourceSection({ sourceType, sources, totalCost, palette }: SourceSectio
           },
         });
       }
-    } else if (source.modelId) {
+    } else if (client_contrib.modelId) {
       modelEntries.push({
-        modelId: source.modelId,
-        cost: source.cost,
-        messages: source.messages,
-        tokens: source.tokens,
+        modelId: client_contrib.modelId,
+        cost: client_contrib.cost,
+        messages: client_contrib.messages,
+        tokens: client_contrib.tokens,
       });
     }
   }
@@ -270,10 +270,10 @@ function SourceSection({ sourceType, sources, totalCost, palette }: SourceSectio
     <div>
       <SectionHeader>
         <SourceBadge
-          style={{ backgroundColor: `${sourceColor}20`, color: sourceColor }}
+          style={{ backgroundColor: `${clientColor}20`, color: clientColor }}
         >
-          <SourceLogo sourceId={sourceType} height={14} />
-          {SOURCE_DISPLAY_NAMES[sourceType] || sourceType}
+          <SourceLogo sourceId={clientType} height={14} />
+          {SOURCE_DISPLAY_NAMES[clientType] || clientType}
         </SourceBadge>
         <SectionTotal style={{ color: "var(--color-fg-default)" }}>{formatCurrency(totalCost)}</SectionTotal>
       </SectionHeader>

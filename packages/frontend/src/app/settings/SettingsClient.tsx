@@ -3,8 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "nextjs-toploader/app";
 import styled from "styled-components";
-import { Avatar, Button, Flash } from "@primer/react";
-import { KeyIcon } from "@primer/octicons-react";
+import { KeyIcon } from "@/components/ui/Icons";
 import { Navigation } from "@/components/layout/Navigation";
 import { Footer } from "@/components/layout/Footer";
 
@@ -127,6 +126,36 @@ const IconWrapper = styled.div`
   color: #737373;
 `;
 
+
+const DangerButton = styled.button`
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 6px;
+  border: 1px solid #F85149;
+  background: transparent;
+  color: #F85149;
+  cursor: pointer;
+  transition: all 150ms;
+  &:hover { background: #F85149; color: #FFFFFF; }
+`;
+
+const InfoBanner = styled.div`
+  padding: 12px 16px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border-default);
+  background: var(--color-bg-subtle);
+  color: var(--color-fg-muted);
+  font-size: 14px;
+`;
+
+const AvatarImg = styled.img`
+  border-radius: 6px;
+  object-fit: cover;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1);
+`;
+
 const TokenName = styled.p`
   font-weight: 500;
 `;
@@ -149,7 +178,7 @@ export default function SettingsClient() {
         setIsLoading(false);
       })
       .catch(() => {
-        router.push("/");
+        router.push("/leaderboard");
       });
 
     fetch("/api/settings/tokens")
@@ -210,11 +239,11 @@ export default function SettingsClient() {
             Profile
           </SectionTitle>
           <ProfileWrapper>
-            <Avatar
+            <AvatarImg
               src={user.avatarUrl || `https://github.com/${user.username}.png`}
               alt={user.username}
-              size={64}
-              square
+              width={64}
+              height={64}
             />
             <div>
               <ProfileText style={{ color: "var(--color-fg-default)" }}>
@@ -230,9 +259,9 @@ export default function SettingsClient() {
               )}
             </div>
           </ProfileWrapper>
-          <Flash variant="default" style={{ marginTop: 16 }}>
+          <InfoBanner style={{ marginTop: 16 }}>
             Profile information is synced from GitHub and cannot be edited here.
-          </Flash>
+          </InfoBanner>
         </Section>
 
         <Section
@@ -290,13 +319,11 @@ export default function SettingsClient() {
                       </SmallText>
                     </div>
                   </TokenInfo>
-                  <Button
-                    variant="danger"
-                    size="small"
+                  <DangerButton
                     onClick={() => handleRevokeToken(token.id)}
                   >
                     Revoke
-                  </Button>
+                  </DangerButton>
                 </TokenItem>
               ))}
             </TokenList>

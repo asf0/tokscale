@@ -114,7 +114,7 @@ export async function GET(_request: Request, { params }: RouteParams) {
       messages: number;
     };
 
-    type SourceBreakdown = {
+    type ClientBreakdown = {
       tokens: number;
       cost: number;
       input: number;
@@ -136,7 +136,7 @@ export async function GET(_request: Request, { params }: RouteParams) {
         cost: number;
         inputTokens: number;
         outputTokens: number;
-        sources: Record<string, SourceBreakdown>;
+        clients: Record<string, ClientBreakdown>;
         models: Record<string, { tokens: number; cost: number }>;
       }
     >();
@@ -155,21 +155,21 @@ export async function GET(_request: Request, { params }: RouteParams) {
         existing.inputTokens += Number(day.inputTokens);
         existing.outputTokens += Number(day.outputTokens);
         if (day.sourceBreakdown) {
-          for (const [source, data] of Object.entries(day.sourceBreakdown)) {
-            const breakdown = data as SourceBreakdown;
-            if (existing.sources[source]) {
-              existing.sources[source].tokens += breakdown.tokens || 0;
-              existing.sources[source].cost += breakdown.cost || 0;
-              existing.sources[source].input += breakdown.input || 0;
-              existing.sources[source].output += breakdown.output || 0;
-              existing.sources[source].cacheRead += breakdown.cacheRead || 0;
-              existing.sources[source].cacheWrite += breakdown.cacheWrite || 0;
-              existing.sources[source].reasoning += breakdown.reasoning || 0;
-              existing.sources[source].messages += breakdown.messages || 0;
+          for (const [client, data] of Object.entries(day.sourceBreakdown)) {
+            const breakdown = data as ClientBreakdown;
+            if (existing.clients[client]) {
+              existing.clients[client].tokens += breakdown.tokens || 0;
+              existing.clients[client].cost += breakdown.cost || 0;
+              existing.clients[client].input += breakdown.input || 0;
+              existing.clients[client].output += breakdown.output || 0;
+              existing.clients[client].cacheRead += breakdown.cacheRead || 0;
+              existing.clients[client].cacheWrite += breakdown.cacheWrite || 0;
+              existing.clients[client].reasoning += breakdown.reasoning || 0;
+              existing.clients[client].messages += breakdown.messages || 0;
               if (breakdown.models) {
-                existing.sources[source].models = existing.sources[source].models || {};
+                existing.clients[client].models = existing.clients[client].models || {};
                 for (const [modelId, modelData] of Object.entries(breakdown.models)) {
-                  const existingModel = existing.sources[source].models![modelId];
+                  const existingModel = existing.clients[client].models![modelId];
                   if (existingModel) {
                     existingModel.tokens += modelData.tokens || 0;
                     existingModel.cost += modelData.cost || 0;
@@ -180,7 +180,7 @@ export async function GET(_request: Request, { params }: RouteParams) {
                     existingModel.reasoning += modelData.reasoning || 0;
                     existingModel.messages += modelData.messages || 0;
                   } else {
-                    existing.sources[source].models![modelId] = {
+                    existing.clients[client].models![modelId] = {
                       tokens: modelData.tokens || 0,
                       cost: modelData.cost || 0,
                       input: modelData.input || 0,
@@ -194,7 +194,7 @@ export async function GET(_request: Request, { params }: RouteParams) {
                 }
               }
             } else {
-              existing.sources[source] = {
+              existing.clients[client] = {
                 tokens: breakdown.tokens || 0,
                 cost: breakdown.cost || 0,
                 input: breakdown.input || 0,
@@ -228,14 +228,14 @@ export async function GET(_request: Request, { params }: RouteParams) {
             }
           }
         }
-      } else {
-        const sources: Record<string, SourceBreakdown> = {};
+       } else {
+        const clients: Record<string, ClientBreakdown> = {};
         const models: Record<string, { tokens: number; cost: number }> = {};
         if (day.sourceBreakdown) {
-          for (const [source, data] of Object.entries(day.sourceBreakdown)) {
-            const breakdown = data as SourceBreakdown;
+          for (const [client, data] of Object.entries(day.sourceBreakdown)) {
+            const breakdown = data as ClientBreakdown;
             // Normalize old DB data that may be missing reasoning and other fields
-            sources[source] = {
+            clients[client] = {
               tokens: breakdown.tokens || 0,
               cost: breakdown.cost || 0,
               input: breakdown.input || 0,
@@ -269,7 +269,7 @@ export async function GET(_request: Request, { params }: RouteParams) {
           cost: Number(day.cost),
           inputTokens: Number(day.inputTokens),
           outputTokens: Number(day.outputTokens),
-          sources,
+          clients,
           models,
         });
       }
@@ -297,10 +297,10 @@ export async function GET(_request: Request, { params }: RouteParams) {
       let dayCacheRead = 0;
       let dayCacheWrite = 0;
       let dayReasoning = 0;
-      for (const sourceData of Object.values(day.sources)) {
-        dayCacheRead += sourceData.cacheRead || 0;
-        dayCacheWrite += sourceData.cacheWrite || 0;
-        dayReasoning += sourceData.reasoning || 0;
+      for (const clientData of Object.values(day.clients)) {
+        dayCacheRead += clientData.cacheRead || 0;
+        dayCacheWrite += clientData.cacheWrite || 0;
+        dayReasoning += clientData.reasoning || 0;
       }
 
       return {
@@ -319,8 +319,8 @@ export async function GET(_request: Request, { params }: RouteParams) {
           cacheWrite: dayCacheWrite,
           reasoning: dayReasoning,
         },
-        sources: Object.entries(day.sources).map(([source, breakdown]) => ({
-          source,
+        clients: Object.entries(day.clients).map(([client, breakdown]) => ({
+          client,
           modelId: breakdown.modelId || "",
           models: breakdown.models || {},
           tokens: {
@@ -384,7 +384,7 @@ export async function GET(_request: Request, { params }: RouteParams) {
         end: stats?.latestDate || null,
       },
       updatedAt: latestSubmission?.updatedAt?.toISOString() || null,
-      sources: latestSubmission?.sourcesUsed || [],
+      clients: latestSubmission?.sourcesUsed || [],
       models: latestSubmission?.modelsUsed || [],
       modelUsage,
       contributions: graphContributions,

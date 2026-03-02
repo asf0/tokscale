@@ -35,6 +35,7 @@ export const SOURCE_DISPLAY_NAMES: Record<string, string> = {
   openclaw: "OpenClaw",
   pi: "Pi",
   kimi: "Kimi",
+  qwen: "Qwen",
 };
 
 // Client logos from GitHub CDN (public repo)
@@ -50,6 +51,7 @@ export const SOURCE_LOGOS: Record<string, string> = {
   openclaw: `${GITHUB_CDN_BASE}/client-openclaw.jpg`,
   pi: `${GITHUB_CDN_BASE}/client-pi.png`,
   kimi: `${GITHUB_CDN_BASE}/client-kimi.png`,
+  qwen: `${GITHUB_CDN_BASE}/client-qwen.png`,
 };
 
 export const SOURCE_COLORS: Record<string, string> = {
@@ -63,6 +65,7 @@ export const SOURCE_COLORS: Record<string, string> = {
   openclaw: "#EF4444",
   pi: "#6366F1",
   kimi: "#8B5CF6",
+  qwen: "#1A73E8",
 };
 
 export const SOURCE_TEXT_COLORS: Record<string, string> = {

@@ -11,9 +11,9 @@ import {
 import type {
   DailyContribution,
   TokenContributionData,
-  SourceType,
+  ClientType,
   WeekData,
-  SourceContribution,
+  ClientContribution,
   TokenBreakdown,
 } from "./types";
 
@@ -70,23 +70,23 @@ function createEmptyContribution(date: string): DailyContribution {
     totals: { tokens: 0, cost: 0, messages: 0 },
     intensity: 0,
     tokenBreakdown: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
-    sources: [],
+    clients: [],
   };
 }
 
-export function filterBySource(data: TokenContributionData, sources: SourceType[]): TokenContributionData {
-  if (sources.length === 0) return data;
+export function filterByClient(data: TokenContributionData, clients: ClientType[]): TokenContributionData {
+  if (clients.length === 0) return data;
 
-  const sourceSet = new Set(sources);
+  const clientSet = new Set(clients);
   const filteredContributions = data.contributions.map((day) => {
-    const filteredSources = day.sources.filter((s) => sourceSet.has(s.source));
-    return recalculateDayTotals({ ...day, sources: filteredSources });
+    const filteredClients = day.clients.filter((c) => clientSet.has(c.client));
+    return recalculateDayTotals({ ...day, clients: filteredClients });
   });
 
   return {
     ...data,
     contributions: recalculateIntensity(filteredContributions),
-    summary: recalculateSummary(filteredContributions, sources),
+    summary: recalculateSummary(filteredContributions, clients),
   };
 }
 
@@ -95,21 +95,21 @@ export function filterByModel(data: TokenContributionData, models: string[]): To
 
   const modelSet = new Set(models);
   const filteredContributions = data.contributions.map((day) => {
-    const filteredSources = day.sources.filter((s) => modelSet.has(s.modelId));
-    return recalculateDayTotals({ ...day, sources: filteredSources });
+    const filteredClients = day.clients.filter((c) => modelSet.has(c.modelId));
+    return recalculateDayTotals({ ...day, clients: filteredClients });
   });
 
-  const filteredSourceSet = new Set<SourceType>();
+  const filteredClientSet = new Set<ClientType>();
   for (const c of filteredContributions) {
-    for (const s of c.sources) {
-      filteredSourceSet.add(s.source);
+    for (const client of c.clients) {
+      filteredClientSet.add(client.client);
     }
   }
 
   return {
     ...data,
     contributions: recalculateIntensity(filteredContributions),
-    summary: recalculateSummary(filteredContributions, Array.from(filteredSourceSet)),
+    summary: recalculateSummary(filteredContributions, Array.from(filteredClientSet)),
   };
 }
 
@@ -129,14 +129,14 @@ function recalculateDayTotals(day: DailyContribution): DailyContribution {
   let totalCost = 0;
   let totalMessages = 0;
 
-  for (const source of day.sources) {
-    tokenBreakdown.input += source.tokens.input || 0;
-    tokenBreakdown.output += source.tokens.output || 0;
-    tokenBreakdown.cacheRead += source.tokens.cacheRead || 0;
-    tokenBreakdown.cacheWrite += source.tokens.cacheWrite || 0;
-    tokenBreakdown.reasoning += source.tokens.reasoning || 0;
-    totalCost += source.cost || 0;
-    totalMessages += source.messages || 0;
+  for (const client_contrib of day.clients) {
+    tokenBreakdown.input += client_contrib.tokens.input || 0;
+    tokenBreakdown.output += client_contrib.tokens.output || 0;
+    tokenBreakdown.cacheRead += client_contrib.tokens.cacheRead || 0;
+    tokenBreakdown.cacheWrite += client_contrib.tokens.cacheWrite || 0;
+    tokenBreakdown.reasoning += client_contrib.tokens.reasoning || 0;
+    totalCost += client_contrib.cost || 0;
+    totalMessages += client_contrib.messages || 0;
   }
 
   const totalTokens =
@@ -173,7 +173,7 @@ function calculateIntensity(tokens: number, maxTokens: number): 0 | 1 | 2 | 3 | 
 
 function recalculateSummary(
   contributions: DailyContribution[],
-  sources: SourceType[]
+  clients: ClientType[]
 ): TokenContributionData["summary"] {
   const activeDays = contributions.filter((c) => c.totals.cost > 0);
   const totalCost = activeDays.reduce((sum, c) => sum + c.totals.cost, 0);
@@ -182,8 +182,8 @@ function recalculateSummary(
 
   const modelSet = new Set<string>();
   for (const c of contributions) {
-    for (const s of c.sources) {
-      modelSet.add(s.modelId);
+    for (const client_contrib of c.clients) {
+      modelSet.add(client_contrib.modelId);
     }
   }
 
@@ -194,12 +194,16 @@ function recalculateSummary(
     activeDays: activeDays.length,
     averagePerDay: activeDays.length > 0 ? totalCost / activeDays.length : 0,
     maxCostInSingleDay: maxCost,
-    sources,
+    clients,
     models: Array.from(modelSet),
   };
 }
 
 export function formatTokenCount(count: number): string {
+  if (count >= 1_000_000_000_000) {
+    const val = (count / 1_000_000_000_000).toFixed(3).replace(/\.?0+$/, '');
+    return `${val}T`;
+  }
   if (count >= 1_000_000_000) return `${(count / 1_000_000_000).toFixed(1)}B`;
   if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`;
   if (count >= 1_000) return `${(count / 1_000).toFixed(1)}K`;
@@ -308,18 +312,18 @@ export function isValidContributionData(data: unknown): data is TokenContributio
   );
 }
 
-export function groupSourcesByType(sources: SourceContribution[]): Map<SourceType, SourceContribution[]> {
-  const grouped = new Map<SourceType, SourceContribution[]>();
+export function groupClientsByType(clients: ClientContribution[]): Map<ClientType, ClientContribution[]> {
+  const grouped = new Map<ClientType, ClientContribution[]>();
 
-  for (const source of sources) {
-    const existing = grouped.get(source.source) || [];
-    existing.push(source);
-    grouped.set(source.source, existing);
+  for (const client_contrib of clients) {
+    const existing = grouped.get(client_contrib.client) || [];
+    existing.push(client_contrib);
+    grouped.set(client_contrib.client, existing);
   }
 
   return grouped;
 }
 
-export function sortSourcesByCost(sources: SourceContribution[]): SourceContribution[] {
-  return [...sources].sort((a, b) => b.cost - a.cost);
+export function sortClientsByCost(clients: ClientContribution[]): ClientContribution[] {
+  return [...clients].sort((a, b) => b.cost - a.cost);
 }

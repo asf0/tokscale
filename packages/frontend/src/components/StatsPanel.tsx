@@ -164,13 +164,13 @@ export function StatsPanel({ data, palette }: StatsPanelProps) {
       </Grid>
 
       <SourcesContainer>
-        <SourcesLabel>Sources:</SourcesLabel>
-        {summary.sources.map((source) => (
+        <SourcesLabel>Clients:</SourcesLabel>
+        {summary.clients.map((client) => (
           <SourceBadge
-            key={source}
+            key={client}
             $backgroundColor={`${palette.grade3}20`}
           >
-            {source}
+            {client}
           </SourceBadge>
         ))}
       </SourcesContainer>
