@@ -144,7 +144,7 @@ define_clients!(
         id: "gemini",
         root: PathRoot::Home,
         relative: ".gemini/tmp",
-        pattern: "session-*.json",
+        pattern: "*.json",
         headless: false,
         parse_local: true
     },

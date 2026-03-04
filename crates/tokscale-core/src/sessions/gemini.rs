@@ -1,6 +1,7 @@
 //! Gemini CLI session parser
 //!
-//! Parses JSON session files from ~/.gemini/tmp/*/chats/session-*.json
+//! Parses JSON session files from ~/.gemini/tmp/* supporting both legacy
+//! `session-*.json` files and new UUID-named files in `chats/` directories.
 
 use super::utils::{
     extract_i64, extract_string, file_modified_timestamp_ms, parse_timestamp_value,
@@ -35,7 +36,6 @@ pub struct GeminiMessage {
     pub timestamp: Option<String>,
     #[serde(rename = "type")]
     pub message_type: String,
-    pub content: Option<String>,
     pub tokens: Option<GeminiTokens>,
     pub model: Option<String>,
 }
@@ -58,6 +58,41 @@ pub fn parse_gemini_file(path: &Path) -> Vec<UnifiedMessage> {
 
     if path.extension().and_then(|s| s.to_str()) == Some("jsonl") {
         return parse_gemini_headless_jsonl(path, fallback_timestamp);
+    }
+
+    // Filter to expected Gemini layouts only:
+    // - Legacy: files starting with "session-"
+    // - Modern: path structure .../.gemini/tmp/<some_id>/chats/<file>.json
+    let file_name_os = path.file_name().unwrap_or_default();
+
+    // Fast path: legacy files are always accepted
+    if !file_name_os
+        .to_str()
+        .map(|s| s.starts_with("session-"))
+        .unwrap_or(false)
+    {
+        use std::ffi::OsStr;
+        // All scanned paths live under ~/.gemini/tmp (scanner root). Enforce the expected subdirectory pattern.
+        let comps: Vec<&OsStr> = path.components().map(|c| c.as_os_str()).collect();
+        let mut ok = false;
+        // Look for ".gemini" immediately followed by "tmp" to avoid matching /tmp paths.
+        'outer: for i in 0..comps.len().saturating_sub(2) {
+            if comps[i] == ".gemini" && comps[i + 1] == "tmp" {
+                // After "tmp", expect exactly 3 components: <some_id>, "chats", and the filename.
+                let after_tmp = &comps[i + 2..];
+                if after_tmp.len() == 3 {
+                    let chats_dir = after_tmp[1];
+                    let last = after_tmp[2];
+                    if chats_dir == OsStr::new("chats") && last == file_name_os {
+                        ok = true;
+                        break 'outer;
+                    }
+                }
+            }
+        }
+        if !ok {
+            return Vec::new();
+        }
     }
 
     let data = match std::fs::read(path) {
@@ -328,6 +363,7 @@ fn extract_timestamp_from_value(value: &Value) -> Option<i64> {
 mod tests {
     use super::*;
     use std::io::Write;
+    use tempfile::TempDir;
 
     #[test]
     fn test_parse_gemini_structure() {
@@ -340,14 +376,12 @@ mod tests {
                 {
                     "id": "msg_1",
                     "timestamp": "2025-06-15T12:00:00Z",
-                    "type": "user",
-                    "content": "Hello"
+                    "type": "user"
                 },
                 {
                     "id": "msg_2",
                     "timestamp": "2025-06-15T12:01:00Z",
                     "type": "gemini",
-                    "content": "Hi there!",
                     "model": "gemini-2.0-flash",
                     "tokens": {
                         "input": 10,
@@ -372,9 +406,58 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_gemini_with_array_content() {
+        let json = r#"{
+            "sessionId": "ses_123",
+            "projectHash": "abc123",
+            "startTime": "2025-06-15T12:00:00Z",
+            "lastUpdated": "2025-06-15T12:30:00Z",
+            "messages": [
+                {
+                    "id": "msg_1",
+                    "timestamp": "2025-06-15T12:00:00Z",
+                    "type": "user",
+                    "content": [{"text": "Hello"}]
+                },
+                {
+                    "id": "msg_2",
+                    "timestamp": "2025-06-15T12:01:00Z",
+                    "type": "gemini",
+                    "content": "Hi there!",
+                    "model": "gemini-2.0-flash",
+                    "tokens": {
+                        "input": 10,
+                        "output": 20
+                    }
+                }
+            ]
+        }"#;
+
+        // Create a path that matches the legacy prefix so it passes the 'is_in_chats' filter
+        let file = tempfile::Builder::new()
+            .prefix("session-")
+            .suffix(".json")
+            .tempfile()
+            .unwrap();
+        std::fs::write(file.path(), json).unwrap();
+
+        let messages = parse_gemini_file(file.path());
+
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].model_id, "gemini-2.0-flash");
+        assert_eq!(messages[0].tokens.input, 10);
+        assert_eq!(messages[0].tokens.output, 20);
+    }
+
+    #[test]
     fn test_parse_headless_json() {
         let json = r#"{"response":"Hi","stats":{"models":{"gemini-2.5-pro":{"tokens":{"prompt":12,"candidates":34,"cached":5,"thoughts":2}}}}}"#;
-        let file = tempfile::Builder::new().suffix(".json").tempfile().unwrap();
+        // Use a legacy prefix to satisfy the path check
+        let file = tempfile::Builder::new()
+            .prefix("session-")
+            .suffix(".json")
+            .tempfile()
+            .unwrap();
         std::fs::write(file.path(), json).unwrap();
 
         let messages = parse_gemini_file(file.path());
@@ -404,5 +487,75 @@ mod tests {
         assert_eq!(messages[0].model_id, "gemini-2.5-pro");
         assert_eq!(messages[0].tokens.input, 10);
         assert_eq!(messages[0].tokens.output, 20);
+    }
+
+    #[test]
+    fn test_parse_gemini_valid_uuid_path() {
+        let json = r#"{
+            "sessionId": "ses_123",
+            "projectHash": "abc123",
+            "startTime": "2025-06-15T12:00:00Z",
+            "lastUpdated": "2025-06-15T12:30:00Z",
+            "messages": [
+                {
+                    "id": "msg_2",
+                    "timestamp": "2025-06-15T12:01:00Z",
+                    "type": "gemini",
+                    "model": "gemini-2.0-flash",
+                    "tokens": {
+                        "input": 10,
+                        "output": 20
+                    }
+                }
+            ]
+        }"#;
+
+        let dir = TempDir::new().unwrap();
+        let base = dir.path();
+        let chats_dir = base.join(".gemini/tmp/abc123/chats");
+        std::fs::create_dir_all(&chats_dir).unwrap();
+        let file_path = chats_dir.join("uuid-file.json");
+        std::fs::write(&file_path, json).unwrap();
+
+        let messages = parse_gemini_file(&file_path);
+
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].model_id, "gemini-2.0-flash");
+        assert_eq!(messages[0].tokens.input, 10);
+        assert_eq!(messages[0].tokens.output, 20);
+    }
+
+    #[test]
+    fn test_parse_gemini_reject_nested_chats() {
+        let json = r#"{
+            "sessionId": "ses_123",
+            "projectHash": "abc123",
+            "startTime": "2025-06-15T12:00:00Z",
+            "lastUpdated": "2025-06-15T12:30:00Z",
+            "messages": [
+                {
+                    "id": "msg_2",
+                    "timestamp": "2025-06-15T12:01:00Z",
+                    "type": "gemini",
+                    "content": [{"text": "test"}],
+                    "model": "gemini-2.0-flash",
+                    "tokens": {
+                        "input": 10,
+                        "output": 20
+                    }
+                }
+            ]
+        }"#;
+
+        let dir = TempDir::new().unwrap();
+        let base = dir.path();
+        let nested_dir = base.join(".gemini/tmp/abc123/backup/chats");
+        std::fs::create_dir_all(&nested_dir).unwrap();
+        let file_path = nested_dir.join("nested.json");
+        std::fs::write(&file_path, json).unwrap();
+
+        let messages = parse_gemini_file(&file_path);
+
+        assert_eq!(messages.len(), 0);
     }
 }

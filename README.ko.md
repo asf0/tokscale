@@ -56,7 +56,7 @@
 | <img width="48px" src=".github/assets/client-claude.jpg" alt="Claude" /> | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | `~/.claude/projects/` | ✅ 지원 |
 | <img width="48px" src=".github/assets/client-openclaw.jpg" alt="OpenClaw" /> | [OpenClaw](https://openclaw.ai/) | `~/.openclaw/agents/` (+ 레거시: `.clawdbot`, `.moltbot`, `.moldbot`) | ✅ 지원 |
 | <img width="48px" src=".github/assets/client-openai.jpg" alt="Codex" /> | [Codex CLI](https://github.com/openai/codex) | `~/.codex/sessions/` | ✅ 지원 |
-| <img width="48px" src=".github/assets/client-gemini.png" alt="Gemini" /> | [Gemini CLI](https://github.com/google-gemini/gemini-cli) | `~/.gemini/tmp/*/chats/` | ✅ 지원 |
+| <img width="48px" src=".github/assets/client-gemini.png" alt="Gemini" /> | [Gemini CLI](https://github.com/google-gemini/gemini-cli) | `~/.gemini/tmp/*/chats/*.json` | ✅ 지원 |
 | <img width="48px" src=".github/assets/client-cursor.jpg" alt="Cursor" /> | [Cursor IDE](https://cursor.com/) | `~/.config/tokscale/cursor-cache/`를 통한 API 동기화 | ✅ 지원 |
 | <img width="48px" src=".github/assets/client-amp.png" alt="Amp" /> | [Amp (AmpCode)](https://ampcode.com/) | `~/.local/share/amp/threads/` | ✅ 지원 |
 | <img width="48px" src=".github/assets/client-droid.png" alt="Droid" /> | [Droid (Factory Droid)](https://factory.ai/) | `~/.factory/sessions/` | ✅ 지원 |
@@ -875,7 +875,7 @@ Tokscale은 다음 위치에 설정을 저장합니다:
 | 플랫폼 | 기본값 | 설정 파일 | 비활성화 설정 | 출처 |
 |----------|---------|-------------|-------------------|--------|
 | Claude Code | **⚠️ 30일** | `~/.claude/settings.json` | `"cleanupPeriodDays": 9999999999` | [문서](https://docs.anthropic.com/en/docs/claude-code/settings) |
-| Gemini CLI | 비활성화됨 | `~/.gemini/settings.json` | `"sessionRetention.enabled": false` | [문서](https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/session-management.md) |
+| Gemini CLI | 비활성화됨 | `~/.gemini/settings.json` | `"general.sessionRetention.enabled": false` | [문서](https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/session-management.md) |
 | Codex CLI | 비활성화됨 | N/A | 정리 기능 없음 | [#6015](https://github.com/openai/codex/issues/6015) |
 | OpenCode | 비활성화됨 | N/A | 정리 기능 없음 | [#4980](https://github.com/sst/opencode/issues/4980) |
 
@@ -982,9 +982,9 @@ OpenCode 1.2+는 세션을 SQLite에 저장합니다. Tokscale은 SQLite를 먼�
 
 ### Gemini CLI
 
-위치: `~/.gemini/tmp/{projectHash}/chats/session-*.json`
+위치: `~/.gemini/tmp/{projectHash}/chats/*.json`
 
-메시지 배열을 포함하는 세션 파일:
+메시지 배열을 포함한 세션 파일:
 ```json
 {
   "sessionId": "xxx",
