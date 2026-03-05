@@ -78,6 +78,9 @@ struct Cli {
     #[arg(long, help = "Show only Kilo usage")]
     kilocode: bool,
 
+    #[arg(long, help = "Show only Mux usage")]
+    mux: bool,
+
     #[arg(long, help = "Show only Synthetic usage")]
     synthetic: bool,
 
@@ -148,6 +151,8 @@ enum Commands {
         roocode: bool,
         #[arg(long, help = "Show only Kilo usage")]
         kilocode: bool,
+        #[arg(long, help = "Show only Mux usage")]
+        mux: bool,
         #[arg(long, help = "Show only Synthetic usage")]
         synthetic: bool,
         #[arg(long, help = "Show only today's usage")]
@@ -206,6 +211,8 @@ enum Commands {
         roocode: bool,
         #[arg(long, help = "Show only Kilo usage")]
         kilocode: bool,
+        #[arg(long, help = "Show only Mux usage")]
+        mux: bool,
         #[arg(long, help = "Show only Synthetic usage")]
         synthetic: bool,
         #[arg(long, help = "Show only today's usage")]
@@ -276,6 +283,8 @@ enum Commands {
         roocode: bool,
         #[arg(long, help = "Show only Kilo usage")]
         kilocode: bool,
+        #[arg(long, help = "Show only Mux usage")]
+        mux: bool,
         #[arg(long, help = "Show only Synthetic usage")]
         synthetic: bool,
         #[arg(long, help = "Show only today's usage")]
@@ -323,6 +332,8 @@ enum Commands {
         roocode: bool,
         #[arg(long, help = "Show only Kilo usage")]
         kilocode: bool,
+        #[arg(long, help = "Show only Mux usage")]
+        mux: bool,
         #[arg(long, help = "Show only Synthetic usage")]
         synthetic: bool,
         #[arg(long, help = "Show only today's usage")]
@@ -366,6 +377,8 @@ enum Commands {
         roocode: bool,
         #[arg(long, help = "Show only Kilo usage")]
         kilocode: bool,
+        #[arg(long, help = "Show only Mux usage")]
+        mux: bool,
         #[arg(long, help = "Show only Synthetic usage")]
         synthetic: bool,
         #[arg(long, help = "Submit only today's usage")]
@@ -431,6 +444,8 @@ enum Commands {
         roocode: bool,
         #[arg(long, help = "Show only Kilo usage")]
         kilocode: bool,
+        #[arg(long, help = "Show only Mux usage")]
+        mux: bool,
         #[arg(long, help = "Show only Synthetic usage")]
         synthetic: bool,
         #[arg(
@@ -514,6 +529,7 @@ fn main() -> Result<()> {
             qwen,
             roocode,
             kilocode,
+            mux,
             synthetic,
             today,
             week,
@@ -545,6 +561,7 @@ fn main() -> Result<()> {
                 qwen,
                 roocode,
                 kilocode,
+                mux,
                 synthetic,
             });
             let (since, until) = build_date_filter(today, week, month, since, until);
@@ -592,6 +609,7 @@ fn main() -> Result<()> {
             qwen,
             roocode,
             kilocode,
+            mux,
             synthetic,
             today,
             week,
@@ -616,6 +634,7 @@ fn main() -> Result<()> {
                 qwen,
                 roocode,
                 kilocode,
+                mux,
                 synthetic,
             });
             let (since, until) = build_date_filter(today, week, month, since, until);
@@ -671,6 +690,7 @@ fn main() -> Result<()> {
             qwen,
             roocode,
             kilocode,
+            mux,
             synthetic,
             today,
             week,
@@ -695,6 +715,7 @@ fn main() -> Result<()> {
                 qwen,
                 roocode,
                 kilocode,
+                mux,
                 synthetic,
             });
             let (since, until) = build_date_filter(today, week, month, since, until);
@@ -715,6 +736,7 @@ fn main() -> Result<()> {
             qwen,
             roocode,
             kilocode,
+            mux,
             synthetic,
             today,
             week,
@@ -737,6 +759,7 @@ fn main() -> Result<()> {
                 qwen,
                 roocode,
                 kilocode,
+                mux,
                 synthetic,
             });
             let (since, until) = build_date_filter(today, week, month, since, until);
@@ -766,6 +789,7 @@ fn main() -> Result<()> {
             qwen,
             roocode,
             kilocode,
+            mux,
             synthetic,
             today,
             week,
@@ -789,6 +813,7 @@ fn main() -> Result<()> {
                 qwen,
                 roocode,
                 kilocode,
+                mux,
                 synthetic,
             });
             let (since, until) = build_date_filter(today, week, month, since, until);
@@ -818,6 +843,7 @@ fn main() -> Result<()> {
             qwen,
             roocode,
             kilocode,
+            mux,
             synthetic,
             short,
             agents,
@@ -839,6 +865,7 @@ fn main() -> Result<()> {
                 qwen,
                 roocode,
                 kilocode,
+                mux,
                 synthetic,
             });
             run_wrapped_command(
@@ -867,6 +894,7 @@ fn main() -> Result<()> {
                 qwen: cli.qwen,
                 roocode: cli.roocode,
                 kilocode: cli.kilocode,
+                mux: cli.mux,
                 synthetic: cli.synthetic,
             });
             let (since, until) =
@@ -935,6 +963,7 @@ struct ClientFlags {
     qwen: bool,
     roocode: bool,
     kilocode: bool,
+    mux: bool,
     synthetic: bool,
 }
 
@@ -955,6 +984,7 @@ fn build_client_filter(flags: ClientFlags) -> Option<Vec<String>> {
         (ClientId::Qwen, flags.qwen),
         (ClientId::RooCode, flags.roocode),
         (ClientId::KiloCode, flags.kilocode),
+        (ClientId::Mux, flags.mux),
     ]
     .into_iter()
     .filter(|(_, enabled)| *enabled)
@@ -2836,7 +2866,7 @@ fn run_submit_command(
     use colored::Colorize;
     use std::io::IsTerminal;
     use tokio::runtime::Runtime;
-    use tokscale_core::{generate_graph, GroupBy, ReportOptions};
+    use tokscale_core::{generate_graph, ClientId, GroupBy, ReportOptions};
 
     let credentials = match auth::load_credentials() {
         Some(creds) => creds,
@@ -3049,6 +3079,21 @@ fn run_submit_command(
             eprintln!("\n  {}", "Error: Failed to connect to server.".red());
             eprintln!("{}\n", format!("  {}", err).bright_black());
             std::process::exit(1);
+        }
+    }
+
+    // Warm the TUI cache so the next `tokscale` launch is instant.
+    // We load with all clients and no date filters (default TUI view)
+    // to maximize cache hit rate.
+    {
+        use crate::tui::{save_cached_data, DataLoader};
+        use std::collections::HashSet;
+
+        let all_clients: Vec<ClientId> = ClientId::iter().collect();
+        let enabled_set: HashSet<ClientId> = all_clients.iter().copied().collect();
+        let loader = DataLoader::with_filters(None, None, None, None);
+        if let Ok(data) = loader.load(&all_clients, &GroupBy::default(), false) {
+            save_cached_data(&data, &enabled_set, false);
         }
     }
 
@@ -3279,6 +3324,7 @@ mod tests {
             qwen: false,
             roocode: false,
             kilocode: false,
+            mux: false,
             synthetic: false,
         };
         assert_eq!(build_client_filter(flags), None);
@@ -3300,6 +3346,7 @@ mod tests {
             qwen: false,
             roocode: false,
             kilocode: false,
+            mux: false,
             synthetic: false,
         };
         assert_eq!(
@@ -3324,6 +3371,7 @@ mod tests {
             qwen: false,
             roocode: false,
             kilocode: false,
+            mux: false,
             synthetic: false,
         };
         assert_eq!(
@@ -3352,6 +3400,7 @@ mod tests {
             qwen: false,
             roocode: false,
             kilocode: false,
+            mux: false,
             synthetic: true,
         };
         assert_eq!(
@@ -3376,12 +3425,13 @@ mod tests {
             qwen: true,
             roocode: true,
             kilocode: true,
+            mux: true,
             synthetic: true,
         };
         let result = build_client_filter(flags);
         assert!(result.is_some());
         let sources = result.unwrap();
-        assert_eq!(sources.len(), 14);
+        assert_eq!(sources.len(), 15);
         assert!(sources.contains(&"opencode".to_string()));
         assert!(sources.contains(&"claude".to_string()));
         assert!(sources.contains(&"codex".to_string()));
@@ -3395,6 +3445,7 @@ mod tests {
         assert!(sources.contains(&"qwen".to_string()));
         assert!(sources.contains(&"roocode".to_string()));
         assert!(sources.contains(&"kilocode".to_string()));
+        assert!(sources.contains(&"mux".to_string()));
         assert!(sources.contains(&"synthetic".to_string()));
     }
 

@@ -166,6 +166,7 @@ async fn fetch_author_pricing(
             .input_cache_write
             .as_ref()
             .and_then(|s| parse_price(s)),
+        ..Default::default()
     };
 
     Some((model_id, pricing))
@@ -246,6 +247,7 @@ pub async fn fetch_all_models() -> HashMap<String, ModelPricing> {
                             output_cost_per_token: Some(output),
                             cache_read_input_token_cost: None,
                             cache_creation_input_token_cost: None,
+                            ..Default::default()
                         })
                     });
                     (m.id, fallback)

@@ -144,7 +144,7 @@ define_clients!(
         id: "gemini",
         root: PathRoot::Home,
         relative: ".gemini/tmp",
-        pattern: "session-*.json",
+        pattern: "*.json",
         headless: false,
         parse_local: true
     },
@@ -211,6 +211,14 @@ define_clients!(
         pattern: "ui_messages.json",
         headless: false,
         parse_local: true
+    },
+    Mux = 13 => {
+        id: "mux",
+        root: PathRoot::Home,
+        relative: ".mux/sessions",
+        pattern: "session-usage.json",
+        headless: false,
+        parse_local: true
     }
 );
 
@@ -263,7 +271,7 @@ mod tests {
 
     #[test]
     fn test_client_id_count() {
-        assert_eq!(ClientId::COUNT, 13);
+        assert_eq!(ClientId::COUNT, 14);
     }
 
     #[test]

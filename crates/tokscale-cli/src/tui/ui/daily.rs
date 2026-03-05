@@ -1,3 +1,4 @@
+use chrono::Utc;
 use ratatui::prelude::*;
 use ratatui::widgets::{
     Block, Borders, Cell, Paragraph, Row, Scrollbar, ScrollbarOrientation, ScrollbarState, Table,
@@ -41,6 +42,7 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
     let selected_index = app.selected_index;
     let theme_accent = app.theme.accent;
     let theme_selection = app.theme.selection;
+    let today = Utc::now().date_naive();
 
     let header_cells = if is_very_narrow {
         vec!["Date", "Cost"]
@@ -109,22 +111,40 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
             let idx = i + start;
             let is_selected = idx == selected_index;
             let is_striped = idx % 2 == 1;
+            let is_today = day.date == today;
 
             let cells: Vec<Cell> = if is_very_narrow {
                 vec![
-                    Cell::from(day.date.format("%m/%d").to_string()),
+                    Cell::from(day.date.format("%m/%d").to_string()).style(if is_today {
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default()
+                    }),
                     Cell::from(format_cost(day.cost)).style(Style::default().fg(Color::Green)),
                 ]
             } else if is_narrow {
                 vec![
-                    Cell::from(day.date.format("%Y-%m-%d").to_string()),
+                    Cell::from(day.date.format("%Y-%m-%d").to_string()).style(if is_today {
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default()
+                    }),
                     Cell::from(format_tokens(day.tokens.total())),
                     Cell::from(format_cost(day.cost)).style(Style::default().fg(Color::Green)),
                 ]
             } else {
                 vec![
-                    Cell::from(day.date.format("%Y-%m-%d").to_string())
-                        .style(Style::default().add_modifier(Modifier::BOLD)),
+                    Cell::from(day.date.format("%Y-%m-%d").to_string()).style(if is_today {
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().add_modifier(Modifier::BOLD)
+                    }),
                     Cell::from(format_tokens(day.tokens.input))
                         .style(Style::default().fg(Color::Rgb(100, 200, 100))),
                     Cell::from(format_tokens(day.tokens.output))
@@ -140,6 +160,8 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
 
             let row_style = if is_selected {
                 Style::default().bg(theme_selection)
+            } else if is_today {
+                Style::default().bg(Color::Rgb(28, 42, 34))
             } else if is_striped {
                 Style::default().bg(Color::Rgb(20, 24, 30))
             } else {

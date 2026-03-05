@@ -75,6 +75,7 @@ impl PricingService {
                     output_cost_per_token: Some(*output),
                     cache_read_input_token_cost: *cache_read,
                     cache_creation_input_token_cost: None,
+                    ..Default::default()
                 },
             );
         }

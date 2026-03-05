@@ -1352,6 +1352,12 @@ fn client_display_name(client: &str) -> Option<&'static str> {
         "droid" => Some("Droid"),
         "openclaw" => Some("OpenClaw"),
         "pi" => Some("Pi"),
+        "kimi" => Some("Kimi CLI"),
+        "qwen" => Some("Qwen CLI"),
+        "roocode" => Some("Roo Code"),
+        "kilocode" => Some("Kilo"),
+        "mux" => Some("Mux"),
+        "synthetic" => Some("Synthetic"),
         _ => None,
     }
 }
@@ -1367,6 +1373,12 @@ fn client_logo_url(client_name: &str) -> Option<&'static str> {
         "Droid" => Some("https://tokscale.ai/assets/logos/droid.png"),
         "OpenClaw" => Some("https://tokscale.ai/assets/logos/openclaw.png"),
         "Pi" => Some("https://tokscale.ai/assets/logos/pi.png"),
+        "Kimi CLI" => Some("https://tokscale.ai/assets/logos/kimi.png"),
+        "Qwen CLI" => Some("https://tokscale.ai/assets/logos/qwen.png"),
+        "Roo Code" => Some("https://tokscale.ai/assets/logos/roocode.png"),
+        "Kilo" => Some("https://tokscale.ai/assets/logos/kilocode.png"),
+        "Mux" => Some("https://tokscale.ai/assets/logos/mux.png"),
+        "Synthetic" => Some("https://tokscale.ai/assets/logos/synthetic.png"),
         _ => None,
     }
 }

@@ -10,6 +10,7 @@ pub mod droid;
 pub mod gemini;
 pub mod kilocode;
 pub mod kimi;
+pub mod mux;
 pub mod openclaw;
 pub mod opencode;
 pub mod pi;

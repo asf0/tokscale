@@ -383,7 +383,8 @@ fn parse_all_messages_with_pricing(
             sessions::codex::parse_codex_file(path)
                 .into_iter()
                 .map(|mut msg| {
-                    msg.cost = pricing.calculate_cost(
+                    let source_cost = msg.cost;
+                    let calculated_cost = pricing.calculate_cost(
                         &msg.model_id,
                         msg.tokens.input,
                         msg.tokens.output,
@@ -391,6 +392,11 @@ fn parse_all_messages_with_pricing(
                         msg.tokens.cache_write,
                         msg.tokens.reasoning,
                     );
+                    msg.cost = if calculated_cost > 0.0 {
+                        calculated_cost
+                    } else {
+                        source_cost
+                    };
                     msg
                 })
                 .collect::<Vec<_>>()
@@ -483,7 +489,8 @@ fn parse_all_messages_with_pricing(
             sessions::droid::parse_droid_file(path)
                 .into_iter()
                 .map(|mut msg| {
-                    msg.cost = pricing.calculate_cost(
+                    let source_cost = msg.cost;
+                    let calculated_cost = pricing.calculate_cost(
                         &msg.model_id,
                         msg.tokens.input,
                         msg.tokens.output,
@@ -491,6 +498,11 @@ fn parse_all_messages_with_pricing(
                         msg.tokens.cache_write,
                         msg.tokens.reasoning,
                     );
+                    msg.cost = if calculated_cost > 0.0 {
+                        calculated_cost
+                    } else {
+                        source_cost
+                    };
                     msg
                 })
                 .collect::<Vec<_>>()
@@ -505,7 +517,8 @@ fn parse_all_messages_with_pricing(
             sessions::openclaw::parse_openclaw_transcript(path)
                 .into_iter()
                 .map(|mut msg| {
-                    msg.cost = pricing.calculate_cost(
+                    let source_cost = msg.cost;
+                    let calculated_cost = pricing.calculate_cost(
                         &msg.model_id,
                         msg.tokens.input,
                         msg.tokens.output,
@@ -513,6 +526,11 @@ fn parse_all_messages_with_pricing(
                         msg.tokens.cache_write,
                         msg.tokens.reasoning,
                     );
+                    msg.cost = if calculated_cost > 0.0 {
+                        calculated_cost
+                    } else {
+                        source_cost
+                    };
                     msg
                 })
                 .collect::<Vec<_>>()
@@ -527,7 +545,8 @@ fn parse_all_messages_with_pricing(
             sessions::pi::parse_pi_file(path)
                 .into_iter()
                 .map(|mut msg| {
-                    msg.cost = pricing.calculate_cost(
+                    let source_cost = msg.cost;
+                    let calculated_cost = pricing.calculate_cost(
                         &msg.model_id,
                         msg.tokens.input,
                         msg.tokens.output,
@@ -535,6 +554,11 @@ fn parse_all_messages_with_pricing(
                         msg.tokens.cache_write,
                         msg.tokens.reasoning,
                     );
+                    msg.cost = if calculated_cost > 0.0 {
+                        calculated_cost
+                    } else {
+                        source_cost
+                    };
                     msg
                 })
                 .collect::<Vec<_>>()
@@ -549,7 +573,8 @@ fn parse_all_messages_with_pricing(
             sessions::kimi::parse_kimi_file(path)
                 .into_iter()
                 .map(|mut msg| {
-                    msg.cost = pricing.calculate_cost(
+                    let source_cost = msg.cost;
+                    let calculated_cost = pricing.calculate_cost(
                         &msg.model_id,
                         msg.tokens.input,
                         msg.tokens.output,
@@ -557,6 +582,11 @@ fn parse_all_messages_with_pricing(
                         msg.tokens.cache_write,
                         msg.tokens.reasoning,
                     );
+                    msg.cost = if calculated_cost > 0.0 {
+                        calculated_cost
+                    } else {
+                        source_cost
+                    };
                     msg
                 })
                 .collect::<Vec<_>>()
@@ -572,7 +602,8 @@ fn parse_all_messages_with_pricing(
             sessions::qwen::parse_qwen_file(path)
                 .into_iter()
                 .map(|mut msg| {
-                    msg.cost = pricing.calculate_cost(
+                    let source_cost = msg.cost;
+                    let calculated_cost = pricing.calculate_cost(
                         &msg.model_id,
                         msg.tokens.input,
                         msg.tokens.output,
@@ -580,6 +611,11 @@ fn parse_all_messages_with_pricing(
                         msg.tokens.cache_write,
                         msg.tokens.reasoning,
                     );
+                    msg.cost = if calculated_cost > 0.0 {
+                        calculated_cost
+                    } else {
+                        source_cost
+                    };
                     msg
                 })
                 .collect::<Vec<_>>()
@@ -594,7 +630,8 @@ fn parse_all_messages_with_pricing(
             sessions::roocode::parse_roocode_file(path)
                 .into_iter()
                 .map(|mut msg| {
-                    msg.cost = pricing.calculate_cost(
+                    let source_cost = msg.cost;
+                    let calculated_cost = pricing.calculate_cost(
                         &msg.model_id,
                         msg.tokens.input,
                         msg.tokens.output,
@@ -602,6 +639,11 @@ fn parse_all_messages_with_pricing(
                         msg.tokens.cache_write,
                         msg.tokens.reasoning,
                     );
+                    msg.cost = if calculated_cost > 0.0 {
+                        calculated_cost
+                    } else {
+                        source_cost
+                    };
                     msg
                 })
                 .collect::<Vec<_>>()
@@ -616,7 +658,8 @@ fn parse_all_messages_with_pricing(
             sessions::kilocode::parse_kilocode_file(path)
                 .into_iter()
                 .map(|mut msg| {
-                    msg.cost = pricing.calculate_cost(
+                    let source_cost = msg.cost;
+                    let calculated_cost = pricing.calculate_cost(
                         &msg.model_id,
                         msg.tokens.input,
                         msg.tokens.output,
@@ -624,12 +667,45 @@ fn parse_all_messages_with_pricing(
                         msg.tokens.cache_write,
                         msg.tokens.reasoning,
                     );
+                    msg.cost = if calculated_cost > 0.0 {
+                        calculated_cost
+                    } else {
+                        source_cost
+                    };
                     msg
                 })
                 .collect::<Vec<_>>()
         })
         .collect();
     all_messages.extend(kilocode_messages);
+
+    let mux_messages: Vec<UnifiedMessage> = scan_result
+        .get(ClientId::Mux)
+        .par_iter()
+        .flat_map(|path| {
+            sessions::mux::parse_mux_file(path)
+                .into_iter()
+                .map(|mut msg| {
+                    let source_cost = msg.cost;
+                    let calculated_cost = pricing.calculate_cost(
+                        &msg.model_id,
+                        msg.tokens.input,
+                        msg.tokens.output,
+                        msg.tokens.cache_read,
+                        msg.tokens.cache_write,
+                        msg.tokens.reasoning,
+                    );
+                    msg.cost = if calculated_cost > 0.0 {
+                        calculated_cost
+                    } else {
+                        source_cost
+                    };
+                    msg
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    all_messages.extend(mux_messages);
 
     if include_synthetic {
         if let Some(db_path) = &scan_result.synthetic_db {
@@ -1164,6 +1240,20 @@ pub fn parse_local_clients(options: LocalParseOptions) -> Result<ParsedMessages,
     let kilocode_count = kilocode_msgs.len() as i32;
     counts.set(ClientId::KiloCode, kilocode_count);
     messages.extend(kilocode_msgs);
+
+    let mux_msgs: Vec<ParsedMessage> = scan_result
+        .get(ClientId::Mux)
+        .par_iter()
+        .flat_map(|path| {
+            sessions::mux::parse_mux_file(path)
+                .into_iter()
+                .map(|msg| unified_to_parsed(&msg))
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    let mux_count = mux_msgs.len() as i32;
+    counts.set(ClientId::Mux, mux_count);
+    messages.extend(mux_msgs);
 
     let mut synthetic_count: i32 = 0;
     if include_synthetic {

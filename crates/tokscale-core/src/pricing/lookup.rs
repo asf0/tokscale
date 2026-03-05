@@ -46,6 +46,7 @@ const RESELLER_PROVIDER_PREFIXES: &[&str] = &[
 const FUZZY_BLOCKLIST: &[&str] = &["auto", "mini", "chat", "base"];
 
 const MAX_LOOKUP_CACHE_ENTRIES: usize = 512;
+const TIERED_PRICING_THRESHOLD_TOKENS: f64 = 200_000.0;
 
 const MIN_FUZZY_MATCH_LEN: usize = 5;
 
@@ -214,7 +215,25 @@ impl PricingLookup {
             return Some(result);
         }
 
-        if let Some(result) = self.exact_match_openrouter(model_id) {
+        let exact_openrouter = self.exact_match_openrouter(model_id);
+        if let Some(stripped) = strip_known_provider_prefix(model_id) {
+            let stripped_litellm = self.exact_or_normalized_litellm(stripped);
+
+            if let (Some(litellm), Some(openrouter)) = (&stripped_litellm, &exact_openrouter) {
+                if has_meaningful_tier_support(&litellm.pricing)
+                    && !has_any_valid_above_tier_value(&openrouter.pricing)
+                {
+                    return stripped_litellm;
+                }
+            }
+
+            if let Some(result) = exact_openrouter {
+                return Some(result);
+            }
+            if let Some(result) = stripped_litellm {
+                return Some(result);
+            }
+        } else if let Some(result) = exact_openrouter {
             return Some(result);
         }
 
@@ -295,7 +314,7 @@ impl PricingLookup {
         }
     }
 
-    fn lookup_litellm_only(&self, model_id: &str) -> Option<LookupResult> {
+    fn exact_or_normalized_litellm(&self, model_id: &str) -> Option<LookupResult> {
         if let Some(result) = self.exact_match_litellm(model_id) {
             return Some(result);
         }
@@ -306,6 +325,18 @@ impl PricingLookup {
         }
         if let Some(normalized) = normalize_model_name(model_id) {
             if let Some(result) = self.exact_match_litellm(&normalized) {
+                return Some(result);
+            }
+        }
+        None
+    }
+
+    fn lookup_litellm_only(&self, model_id: &str) -> Option<LookupResult> {
+        if let Some(result) = self.exact_or_normalized_litellm(model_id) {
+            return Some(result);
+        }
+        if let Some(stripped) = strip_known_provider_prefix(model_id) {
+            if let Some(result) = self.exact_or_normalized_litellm(stripped) {
                 return Some(result);
             }
         }
@@ -530,18 +561,44 @@ pub fn compute_cost(
     cache_write: i64,
     reasoning: i64,
 ) -> f64 {
-    let safe_price = |opt: Option<f64>| opt.filter(|v| v.is_finite() && *v >= 0.0).unwrap_or(0.0);
+    let safe_price = |opt: Option<f64>| opt.filter(|v| is_valid_price_value(*v)).unwrap_or(0.0);
+    let tiered_cost = |tokens: f64, base: Option<f64>, above_200k: Option<f64>| {
+        let base_price = safe_price(base);
+        let above_price = above_200k.filter(|v| is_valid_price_value(*v));
+        if tokens > TIERED_PRICING_THRESHOLD_TOKENS {
+            if let Some(above_price) = above_price {
+                return TIERED_PRICING_THRESHOLD_TOKENS * base_price
+                    + (tokens - TIERED_PRICING_THRESHOLD_TOKENS) * above_price;
+            }
+        }
+        tokens * base_price
+    };
 
     let input_clamped = input.max(0) as f64;
     let output_clamped = output.max(0).saturating_add(reasoning.max(0)) as f64;
     let cache_read_clamped = cache_read.max(0) as f64;
     let cache_write_clamped = cache_write.max(0) as f64;
 
-    let input_cost = input_clamped * safe_price(pricing.input_cost_per_token);
-    let output_cost = output_clamped * safe_price(pricing.output_cost_per_token);
-    let cache_read_cost = cache_read_clamped * safe_price(pricing.cache_read_input_token_cost);
-    let cache_write_cost =
-        cache_write_clamped * safe_price(pricing.cache_creation_input_token_cost);
+    let input_cost = tiered_cost(
+        input_clamped,
+        pricing.input_cost_per_token,
+        pricing.input_cost_per_token_above_200k_tokens,
+    );
+    let output_cost = tiered_cost(
+        output_clamped,
+        pricing.output_cost_per_token,
+        pricing.output_cost_per_token_above_200k_tokens,
+    );
+    let cache_read_cost = tiered_cost(
+        cache_read_clamped,
+        pricing.cache_read_input_token_cost,
+        pricing.cache_read_input_token_cost_above_200k_tokens,
+    );
+    let cache_write_cost = tiered_cost(
+        cache_write_clamped,
+        pricing.cache_creation_input_token_cost,
+        pricing.cache_creation_input_token_cost_above_200k_tokens,
+    );
 
     input_cost + output_cost + cache_read_cost + cache_write_cost
 }
@@ -637,27 +694,40 @@ fn normalize_model_name(model_id: &str) -> Option<String> {
     let lower = model_id.to_lowercase();
 
     if lower.contains("opus") {
-        if lower.contains("4.5") || lower.contains("4-5") {
+        if contains_delimited_fragment(&lower, "4.6") || contains_delimited_fragment(&lower, "4-6")
+        {
+            return Some("claude-opus-4-6".into());
+        } else if contains_delimited_fragment(&lower, "4.5")
+            || contains_delimited_fragment(&lower, "4-5")
+        {
             return Some("claude-opus-4-5".into());
-        } else if lower.contains("4") {
+        } else if contains_delimited_fragment(&lower, "4") {
             return Some("claude-opus-4".into());
         }
     }
     if lower.contains("sonnet") {
-        if lower.contains("4.5") || lower.contains("4-5") {
+        if contains_delimited_fragment(&lower, "4.5") || contains_delimited_fragment(&lower, "4-5")
+        {
             return Some("claude-sonnet-4-5".into());
-        } else if lower.contains("4") && !lower.contains("3.") && !lower.contains("3-") {
+        } else if contains_delimited_fragment(&lower, "4") {
             return Some("claude-sonnet-4".into());
-        } else if lower.contains("3.7") || lower.contains("3-7") {
+        } else if contains_delimited_fragment(&lower, "3.7")
+            || contains_delimited_fragment(&lower, "3-7")
+        {
             return Some("claude-3-7-sonnet".into());
-        } else if lower.contains("3.5") || lower.contains("3-5") {
+        } else if contains_delimited_fragment(&lower, "3.5")
+            || contains_delimited_fragment(&lower, "3-5")
+        {
             return Some("claude-3.5-sonnet".into());
         }
     }
     if lower.contains("haiku") {
-        if lower.contains("4.5") || lower.contains("4-5") {
+        if contains_delimited_fragment(&lower, "4.5") || contains_delimited_fragment(&lower, "4-5")
+        {
             return Some("claude-haiku-4-5".into());
-        } else if lower.contains("3.5") || lower.contains("3-5") {
+        } else if contains_delimited_fragment(&lower, "3.5")
+            || contains_delimited_fragment(&lower, "3-5")
+        {
             return Some("claude-3.5-haiku".into());
         }
     }
@@ -697,6 +767,74 @@ fn normalize_version_separator(model_id: &str) -> Option<String> {
     } else {
         None
     }
+}
+
+fn strip_known_provider_prefix(model_id: &str) -> Option<&str> {
+    for prefix in PROVIDER_PREFIXES {
+        if let Some(stripped) = model_id.strip_prefix(prefix) {
+            if !stripped.is_empty() {
+                return Some(stripped);
+            }
+        }
+    }
+    None
+}
+
+fn is_valid_price_value(value: f64) -> bool {
+    value.is_finite() && value >= 0.0
+}
+
+fn has_any_valid_above_tier_value(pricing: &ModelPricing) -> bool {
+    [
+        pricing.input_cost_per_token_above_200k_tokens,
+        pricing.output_cost_per_token_above_200k_tokens,
+        pricing.cache_read_input_token_cost_above_200k_tokens,
+        pricing.cache_creation_input_token_cost_above_200k_tokens,
+    ]
+    .into_iter()
+    .flatten()
+    .any(is_valid_price_value)
+}
+
+fn has_meaningful_tier_support(pricing: &ModelPricing) -> bool {
+    [
+        (
+            pricing.input_cost_per_token,
+            pricing.input_cost_per_token_above_200k_tokens,
+        ),
+        (
+            pricing.output_cost_per_token,
+            pricing.output_cost_per_token_above_200k_tokens,
+        ),
+    ]
+    .into_iter()
+    .any(|(base, above)| match (base, above) {
+        (Some(base), Some(above)) => base.is_finite() && base >= 0.0 && is_valid_price_value(above),
+        _ => false,
+    })
+}
+
+fn contains_delimited_fragment(haystack: &str, fragment: &str) -> bool {
+    if fragment.is_empty() {
+        return false;
+    }
+
+    for (pos, _) in haystack.match_indices(fragment) {
+        let before_ok = pos == 0 || !haystack[..pos].chars().last().unwrap().is_alphanumeric();
+        let after_pos = pos + fragment.len();
+        let after_ok = after_pos == haystack.len()
+            || !haystack[after_pos..]
+                .chars()
+                .next()
+                .unwrap()
+                .is_alphanumeric();
+
+        if before_ok && after_ok {
+            return true;
+        }
+    }
+
+    false
 }
 
 fn is_fuzzy_eligible(model_id: &str) -> bool {
@@ -835,6 +973,7 @@ mod tests {
                 output_cost_per_token: Some(0.00001),
                 cache_read_input_token_cost: Some(0.00000125),
                 cache_creation_input_token_cost: None,
+                ..Default::default()
             },
         );
         m.insert(
@@ -844,6 +983,7 @@ mod tests {
                 output_cost_per_token: Some(0.0000006),
                 cache_read_input_token_cost: Some(0.000000075),
                 cache_creation_input_token_cost: None,
+                ..Default::default()
             },
         );
         m.insert(
@@ -853,6 +993,7 @@ mod tests {
                 output_cost_per_token: Some(0.00003),
                 cache_read_input_token_cost: None,
                 cache_creation_input_token_cost: None,
+                ..Default::default()
             },
         );
 
@@ -864,6 +1005,7 @@ mod tests {
                 output_cost_per_token: Some(0.000014),
                 cache_read_input_token_cost: Some(1.75e-7),
                 cache_creation_input_token_cost: None,
+                ..Default::default()
             },
         );
         m.insert(
@@ -873,6 +1015,7 @@ mod tests {
                 output_cost_per_token: Some(0.00001),
                 cache_read_input_token_cost: Some(1.25e-7),
                 cache_creation_input_token_cost: None,
+                ..Default::default()
             },
         );
         m.insert(
@@ -882,6 +1025,7 @@ mod tests {
                 output_cost_per_token: Some(0.00001),
                 cache_read_input_token_cost: Some(1.25e-7),
                 cache_creation_input_token_cost: None,
+                ..Default::default()
             },
         );
         m.insert(
@@ -891,6 +1035,7 @@ mod tests {
                 output_cost_per_token: Some(0.00001),
                 cache_read_input_token_cost: Some(1.25e-7),
                 cache_creation_input_token_cost: None,
+                ..Default::default()
             },
         );
         m.insert(
@@ -900,6 +1045,7 @@ mod tests {
                 output_cost_per_token: Some(0.00001),
                 cache_read_input_token_cost: Some(1.25e-7),
                 cache_creation_input_token_cost: None,
+                ..Default::default()
             },
         );
         m.insert(
@@ -909,6 +1055,7 @@ mod tests {
                 output_cost_per_token: Some(0.00001),
                 cache_read_input_token_cost: Some(1.25e-7),
                 cache_creation_input_token_cost: None,
+                ..Default::default()
             },
         );
         m.insert(
@@ -918,6 +1065,7 @@ mod tests {
                 output_cost_per_token: Some(4e-7),
                 cache_read_input_token_cost: Some(5e-9),
                 cache_creation_input_token_cost: None,
+                ..Default::default()
             },
         );
 
@@ -929,6 +1077,7 @@ mod tests {
                 output_cost_per_token: Some(0.000015),
                 cache_read_input_token_cost: Some(0.0000003),
                 cache_creation_input_token_cost: Some(0.00000375),
+                ..Default::default()
             },
         );
         m.insert(
@@ -938,6 +1087,7 @@ mod tests {
                 output_cost_per_token: Some(0.000015),
                 cache_read_input_token_cost: Some(3e-7),
                 cache_creation_input_token_cost: Some(0.00000375),
+                ..Default::default()
             },
         );
         m.insert(
@@ -947,6 +1097,7 @@ mod tests {
                 output_cost_per_token: Some(0.000005),
                 cache_read_input_token_cost: Some(1e-7),
                 cache_creation_input_token_cost: Some(0.00000125),
+                ..Default::default()
             },
         );
         m.insert(
@@ -956,6 +1107,7 @@ mod tests {
                 output_cost_per_token: Some(0.000004),
                 cache_read_input_token_cost: Some(8e-8),
                 cache_creation_input_token_cost: Some(0.000001),
+                ..Default::default()
             },
         );
         m.insert(
@@ -965,6 +1117,7 @@ mod tests {
                 output_cost_per_token: Some(0.000025),
                 cache_read_input_token_cost: Some(5e-7),
                 cache_creation_input_token_cost: Some(0.00000625),
+                ..Default::default()
             },
         );
         m.insert(
@@ -974,6 +1127,7 @@ mod tests {
                 output_cost_per_token: Some(0.000075),
                 cache_read_input_token_cost: Some(0.0000015),
                 cache_creation_input_token_cost: Some(0.00001875),
+                ..Default::default()
             },
         );
 
@@ -985,6 +1139,7 @@ mod tests {
                 output_cost_per_token: Some(0.000012),
                 cache_read_input_token_cost: Some(2e-7),
                 cache_creation_input_token_cost: None,
+                ..Default::default()
             },
         );
         m.insert(
@@ -994,6 +1149,7 @@ mod tests {
                 output_cost_per_token: Some(0.000003),
                 cache_read_input_token_cost: Some(5e-8),
                 cache_creation_input_token_cost: None,
+                ..Default::default()
             },
         );
 
@@ -1005,6 +1161,7 @@ mod tests {
                 output_cost_per_token: Some(0.0000015),
                 cache_read_input_token_cost: Some(2e-8),
                 cache_creation_input_token_cost: None,
+                ..Default::default()
             },
         );
 
@@ -1015,6 +1172,7 @@ mod tests {
                 output_cost_per_token: Some(0.0000175),
                 cache_read_input_token_cost: None,
                 cache_creation_input_token_cost: None,
+                ..Default::default()
             },
         );
         m.insert(
@@ -1024,6 +1182,7 @@ mod tests {
                 output_cost_per_token: Some(0.000015),
                 cache_read_input_token_cost: Some(3e-7),
                 cache_creation_input_token_cost: Some(0.00000375),
+                ..Default::default()
             },
         );
         m.insert(
@@ -1033,6 +1192,7 @@ mod tests {
                 output_cost_per_token: Some(0.000005),
                 cache_read_input_token_cost: None,
                 cache_creation_input_token_cost: None,
+                ..Default::default()
             },
         );
         m.insert(
@@ -1042,6 +1202,7 @@ mod tests {
                 output_cost_per_token: Some(0.000005),
                 cache_read_input_token_cost: None,
                 cache_creation_input_token_cost: None,
+                ..Default::default()
             },
         );
 
@@ -1060,6 +1221,7 @@ mod tests {
                 output_cost_per_token: Some(0.00001),
                 cache_read_input_token_cost: Some(0.00000125),
                 cache_creation_input_token_cost: None,
+                ..Default::default()
             },
         );
 
@@ -1071,6 +1233,7 @@ mod tests {
                 output_cost_per_token: Some(0.000015),
                 cache_read_input_token_cost: Some(3e-7),
                 cache_creation_input_token_cost: Some(0.00000375),
+                ..Default::default()
             },
         );
         m.insert(
@@ -1080,6 +1243,7 @@ mod tests {
                 output_cost_per_token: Some(0.000025),
                 cache_read_input_token_cost: Some(0.0000005),
                 cache_creation_input_token_cost: Some(0.00000625),
+                ..Default::default()
             },
         );
         m.insert(
@@ -1089,6 +1253,7 @@ mod tests {
                 output_cost_per_token: Some(0.000004),
                 cache_read_input_token_cost: Some(8e-8),
                 cache_creation_input_token_cost: Some(0.000001),
+                ..Default::default()
             },
         );
 
@@ -1100,6 +1265,7 @@ mod tests {
                 output_cost_per_token: Some(0.0000015),
                 cache_read_input_token_cost: None,
                 cache_creation_input_token_cost: None,
+                ..Default::default()
             },
         );
         m.insert(
@@ -1109,6 +1275,7 @@ mod tests {
                 output_cost_per_token: Some(0.0000019),
                 cache_read_input_token_cost: None,
                 cache_creation_input_token_cost: None,
+                ..Default::default()
             },
         );
 
@@ -1119,6 +1286,7 @@ mod tests {
                 output_cost_per_token: Some(0.00000184),
                 cache_read_input_token_cost: None,
                 cache_creation_input_token_cost: None,
+                ..Default::default()
             },
         );
         m.insert(
@@ -1128,6 +1296,7 @@ mod tests {
                 output_cost_per_token: Some(0.0000025),
                 cache_read_input_token_cost: None,
                 cache_creation_input_token_cost: None,
+                ..Default::default()
             },
         );
         m.insert(
@@ -1137,6 +1306,7 @@ mod tests {
                 output_cost_per_token: Some(0.00000175),
                 cache_read_input_token_cost: None,
                 cache_creation_input_token_cost: None,
+                ..Default::default()
             },
         );
 
@@ -1148,6 +1318,7 @@ mod tests {
                 output_cost_per_token: Some(9.5e-7),
                 cache_read_input_token_cost: None,
                 cache_creation_input_token_cost: None,
+                ..Default::default()
             },
         );
 
@@ -1480,6 +1651,110 @@ mod tests {
     }
 
     #[test]
+    fn test_normalize_opus_4_6_prefers_4_6_over_4() {
+        let mut litellm = HashMap::new();
+        litellm.insert(
+            "claude-opus-4".into(),
+            ModelPricing {
+                input_cost_per_token: Some(0.00002),
+                output_cost_per_token: Some(0.0001),
+                ..Default::default()
+            },
+        );
+        litellm.insert(
+            "claude-opus-4-6".into(),
+            ModelPricing {
+                input_cost_per_token: Some(0.00001),
+                output_cost_per_token: Some(0.00005),
+                ..Default::default()
+            },
+        );
+
+        let lookup = PricingLookup::new(litellm, HashMap::new(), HashMap::new());
+        let result = lookup.lookup("opus-4-6").unwrap();
+        assert_eq!(result.matched_key, "claude-opus-4-6");
+        assert_eq!(result.source, "LiteLLM");
+    }
+
+    #[test]
+    fn test_normalize_opus_4_6_dot_prefers_4_6_over_4() {
+        let mut litellm = HashMap::new();
+        litellm.insert(
+            "claude-opus-4".into(),
+            ModelPricing {
+                input_cost_per_token: Some(0.00002),
+                output_cost_per_token: Some(0.0001),
+                ..Default::default()
+            },
+        );
+        litellm.insert(
+            "claude-opus-4-6".into(),
+            ModelPricing {
+                input_cost_per_token: Some(0.00001),
+                output_cost_per_token: Some(0.00005),
+                ..Default::default()
+            },
+        );
+
+        let lookup = PricingLookup::new(litellm, HashMap::new(), HashMap::new());
+        let result = lookup.lookup("opus-4.6").unwrap();
+        assert_eq!(result.matched_key, "claude-opus-4-6");
+        assert_eq!(result.source, "LiteLLM");
+    }
+
+    #[test]
+    fn test_normalize_opus_4_60_does_not_map_to_4_6() {
+        let mut litellm = HashMap::new();
+        litellm.insert(
+            "claude-opus-4".into(),
+            ModelPricing {
+                input_cost_per_token: Some(0.00002),
+                output_cost_per_token: Some(0.0001),
+                ..Default::default()
+            },
+        );
+        litellm.insert(
+            "claude-opus-4-6".into(),
+            ModelPricing {
+                input_cost_per_token: Some(0.00001),
+                output_cost_per_token: Some(0.00005),
+                ..Default::default()
+            },
+        );
+
+        let lookup = PricingLookup::new(litellm, HashMap::new(), HashMap::new());
+        let result = lookup.lookup("opus-4-60").unwrap();
+        assert_eq!(result.matched_key, "claude-opus-4");
+        assert_ne!(result.matched_key, "claude-opus-4-6");
+    }
+
+    #[test]
+    fn test_normalize_opus_14_6_does_not_map_to_4_6() {
+        let mut litellm = HashMap::new();
+        litellm.insert(
+            "claude-opus-4-6".into(),
+            ModelPricing {
+                input_cost_per_token: Some(0.00001),
+                output_cost_per_token: Some(0.00005),
+                ..Default::default()
+            },
+        );
+
+        let lookup = PricingLookup::new(litellm, HashMap::new(), HashMap::new());
+        assert!(lookup.lookup("opus-14-6").is_none());
+    }
+
+    #[test]
+    fn test_normalize_sonnet_14_5_does_not_map_to_4_5() {
+        assert_eq!(normalize_model_name("sonnet-14-5"), None);
+    }
+
+    #[test]
+    fn test_normalize_haiku_14_5_does_not_map_to_4_5() {
+        assert_eq!(normalize_model_name("haiku-14-5"), None);
+    }
+
+    #[test]
     fn test_blocklist_auto() {
         let lookup = create_lookup();
         assert!(lookup.lookup("auto").is_none());
@@ -1550,6 +1825,7 @@ mod tests {
                 output_cost_per_token: Some(0.00001),
                 cache_read_input_token_cost: Some(1.25e-7),
                 cache_creation_input_token_cost: None,
+                ..Default::default()
             },
         );
         // Note: gpt-5-codex is NOT in the pricing data
@@ -1578,6 +1854,7 @@ mod tests {
                 output_cost_per_token: Some(0.00001),
                 cache_read_input_token_cost: Some(1.25e-7),
                 cache_creation_input_token_cost: None,
+                ..Default::default()
             },
         );
 
@@ -1605,6 +1882,7 @@ mod tests {
                 output_cost_per_token: Some(0.00001),
                 cache_read_input_token_cost: None,
                 cache_creation_input_token_cost: None,
+                ..Default::default()
             },
         );
         litellm.insert(
@@ -1614,6 +1892,7 @@ mod tests {
                 output_cost_per_token: Some(0.000015),
                 cache_read_input_token_cost: None,
                 cache_creation_input_token_cost: None,
+                ..Default::default()
             },
         );
 
@@ -1707,6 +1986,7 @@ mod tests {
                 output_cost_per_token: Some(0.0000175), // $17.50/1M tokens
                 cache_read_input_token_cost: None,
                 cache_creation_input_token_cost: None,
+                ..Default::default()
             },
         );
 
@@ -1718,6 +1998,7 @@ mod tests {
                 output_cost_per_token: Some(0.0000015), // $1.50/1M tokens
                 cache_read_input_token_cost: Some(0.00000002),
                 cache_creation_input_token_cost: None,
+                ..Default::default()
             },
         );
 
@@ -1803,6 +2084,445 @@ mod tests {
         let cost = lookup.calculate_cost("claude-sonnet-4-5", 100_000, 50_000, 200_000, 0, 0);
         // input: 100K * 0.000003 = 0.30, output: 50K * 0.000015 = 0.75, cache: 200K * 3e-7 = 0.06
         assert!((cost - 1.11).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_compute_cost_tiered_boundary_at_200k_uses_base_rates() {
+        let pricing: ModelPricing = serde_json::from_str(
+            r#"{
+                "input_cost_per_token": 0.000001,
+                "input_cost_per_token_above_200k_tokens": 0.000002,
+                "output_cost_per_token": 0.000003,
+                "output_cost_per_token_above_200k_tokens": 0.000004
+            }"#,
+        )
+        .unwrap();
+
+        let cost = compute_cost(&pricing, 200_000, 200_000, 0, 0, 0);
+        let expected = 200_000.0 * 0.000001 + 200_000.0 * 0.000003;
+
+        assert!((cost - expected).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_compute_cost_tiered_above_200k_splits_input_and_output() {
+        let pricing: ModelPricing = serde_json::from_str(
+            r#"{
+                "input_cost_per_token": 0.000001,
+                "input_cost_per_token_above_200k_tokens": 0.000002,
+                "output_cost_per_token": 0.000003,
+                "output_cost_per_token_above_200k_tokens": 0.000004
+            }"#,
+        )
+        .unwrap();
+
+        let cost = compute_cost(&pricing, 200_001, 200_001, 0, 0, 0);
+        let expected =
+            (200_000.0 * 0.000001 + 1.0 * 0.000002) + (200_000.0 * 0.000003 + 1.0 * 0.000004);
+
+        assert!((cost - expected).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_compute_cost_tiered_is_applied_per_bucket() {
+        let pricing: ModelPricing = serde_json::from_str(
+            r#"{
+                "input_cost_per_token": 0.000001,
+                "input_cost_per_token_above_200k_tokens": 0.000002,
+                "output_cost_per_token": 0.000003,
+                "output_cost_per_token_above_200k_tokens": 0.000004
+            }"#,
+        )
+        .unwrap();
+
+        let cost = compute_cost(&pricing, 200_001, 200_000, 0, 0, 0);
+        let expected = (200_000.0 * 0.000001 + 1.0 * 0.000002) + (200_000.0 * 0.000003);
+
+        assert!((cost - expected).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_compute_cost_tiered_missing_base_input_only_charges_above_threshold() {
+        let pricing: ModelPricing = serde_json::from_str(
+            r#"{
+                "input_cost_per_token_above_200k_tokens": 0.000002
+            }"#,
+        )
+        .unwrap();
+
+        let at_threshold = compute_cost(&pricing, 200_000, 0, 0, 0, 0);
+        let above_threshold = compute_cost(&pricing, 200_001, 0, 0, 0, 0);
+
+        assert_eq!(at_threshold, 0.0);
+        assert!((above_threshold - 0.000002).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_compute_cost_tiered_cache_read_applies_split() {
+        let pricing: ModelPricing = serde_json::from_str(
+            r#"{
+                "cache_read_input_token_cost": 0.0000001,
+                "cache_read_input_token_cost_above_200k_tokens": 0.0000002
+            }"#,
+        )
+        .unwrap();
+
+        let at_threshold = compute_cost(&pricing, 0, 0, 200_000, 0, 0);
+        let above_threshold = compute_cost(&pricing, 0, 0, 200_001, 0, 0);
+
+        assert!((at_threshold - (200_000.0 * 0.0000001)).abs() < 1e-12);
+        assert!((above_threshold - (200_000.0 * 0.0000001 + 0.0000002)).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_compute_cost_tiered_cache_write_applies_split() {
+        let pricing: ModelPricing = serde_json::from_str(
+            r#"{
+                "cache_creation_input_token_cost": 0.0000003,
+                "cache_creation_input_token_cost_above_200k_tokens": 0.0000004
+            }"#,
+        )
+        .unwrap();
+
+        let at_threshold = compute_cost(&pricing, 0, 0, 0, 200_000, 0);
+        let above_threshold = compute_cost(&pricing, 0, 0, 0, 200_001, 0);
+
+        assert!((at_threshold - (200_000.0 * 0.0000003)).abs() < 1e-12);
+        assert!((above_threshold - (200_000.0 * 0.0000003 + 0.0000004)).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_compute_cost_tiered_without_above_rate_uses_base_for_all_tokens() {
+        let pricing = ModelPricing {
+            input_cost_per_token: Some(0.000001),
+            ..Default::default()
+        };
+
+        let cost = compute_cost(&pricing, 250_000, 0, 0, 0, 0);
+
+        assert!((cost - (250_000.0 * 0.000001)).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_compute_cost_tiered_invalid_above_rate_falls_back_to_base() {
+        let pricing_negative = ModelPricing {
+            input_cost_per_token: Some(0.000001),
+            input_cost_per_token_above_200k_tokens: Some(-0.000002),
+            ..Default::default()
+        };
+        let pricing_infinite = ModelPricing {
+            input_cost_per_token: Some(0.000001),
+            input_cost_per_token_above_200k_tokens: Some(f64::INFINITY),
+            ..Default::default()
+        };
+        let pricing_nan = ModelPricing {
+            input_cost_per_token: Some(0.000001),
+            input_cost_per_token_above_200k_tokens: Some(f64::NAN),
+            ..Default::default()
+        };
+
+        let expected = 200_001.0 * 0.000001;
+        assert!((compute_cost(&pricing_negative, 200_001, 0, 0, 0, 0) - expected).abs() < 1e-12);
+        assert!((compute_cost(&pricing_infinite, 200_001, 0, 0, 0, 0) - expected).abs() < 1e-12);
+        assert!((compute_cost(&pricing_nan, 200_001, 0, 0, 0, 0) - expected).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_compute_cost_tiered_reasoning_boundary_at_200k_uses_base_output_rate() {
+        let pricing = ModelPricing {
+            output_cost_per_token: Some(0.000003),
+            output_cost_per_token_above_200k_tokens: Some(0.000004),
+            ..Default::default()
+        };
+
+        let cost = compute_cost(&pricing, 0, 199_999, 0, 0, 1);
+        let expected = 200_000.0 * 0.000003;
+
+        assert!((cost - expected).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_compute_cost_tiered_invalid_above_rate_falls_back_to_base_output_reasoning() {
+        let pricing_negative = ModelPricing {
+            output_cost_per_token: Some(0.000003),
+            output_cost_per_token_above_200k_tokens: Some(-0.000004),
+            ..Default::default()
+        };
+        let pricing_infinite = ModelPricing {
+            output_cost_per_token: Some(0.000003),
+            output_cost_per_token_above_200k_tokens: Some(f64::INFINITY),
+            ..Default::default()
+        };
+        let pricing_nan = ModelPricing {
+            output_cost_per_token: Some(0.000003),
+            output_cost_per_token_above_200k_tokens: Some(f64::NAN),
+            ..Default::default()
+        };
+
+        let expected = 200_001.0 * 0.000003;
+        assert!((compute_cost(&pricing_negative, 0, 199_999, 0, 0, 2) - expected).abs() < 1e-12);
+        assert!((compute_cost(&pricing_infinite, 0, 199_999, 0, 0, 2) - expected).abs() < 1e-12);
+        assert!((compute_cost(&pricing_nan, 0, 199_999, 0, 0, 2) - expected).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_compute_cost_tiered_invalid_above_rate_falls_back_to_base_cache_read() {
+        let pricing_negative = ModelPricing {
+            cache_read_input_token_cost: Some(0.0000001),
+            cache_read_input_token_cost_above_200k_tokens: Some(-0.0000002),
+            ..Default::default()
+        };
+        let pricing_infinite = ModelPricing {
+            cache_read_input_token_cost: Some(0.0000001),
+            cache_read_input_token_cost_above_200k_tokens: Some(f64::INFINITY),
+            ..Default::default()
+        };
+        let pricing_nan = ModelPricing {
+            cache_read_input_token_cost: Some(0.0000001),
+            cache_read_input_token_cost_above_200k_tokens: Some(f64::NAN),
+            ..Default::default()
+        };
+
+        let expected = 200_001.0 * 0.0000001;
+        assert!((compute_cost(&pricing_negative, 0, 0, 200_001, 0, 0) - expected).abs() < 1e-12);
+        assert!((compute_cost(&pricing_infinite, 0, 0, 200_001, 0, 0) - expected).abs() < 1e-12);
+        assert!((compute_cost(&pricing_nan, 0, 0, 200_001, 0, 0) - expected).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_compute_cost_tiered_invalid_above_rate_falls_back_to_base_cache_write() {
+        let pricing_negative = ModelPricing {
+            cache_creation_input_token_cost: Some(0.0000003),
+            cache_creation_input_token_cost_above_200k_tokens: Some(-0.0000004),
+            ..Default::default()
+        };
+        let pricing_infinite = ModelPricing {
+            cache_creation_input_token_cost: Some(0.0000003),
+            cache_creation_input_token_cost_above_200k_tokens: Some(f64::INFINITY),
+            ..Default::default()
+        };
+        let pricing_nan = ModelPricing {
+            cache_creation_input_token_cost: Some(0.0000003),
+            cache_creation_input_token_cost_above_200k_tokens: Some(f64::NAN),
+            ..Default::default()
+        };
+
+        let expected = 200_001.0 * 0.0000003;
+        assert!((compute_cost(&pricing_negative, 0, 0, 0, 200_001, 0) - expected).abs() < 1e-12);
+        assert!((compute_cost(&pricing_infinite, 0, 0, 0, 200_001, 0) - expected).abs() < 1e-12);
+        assert!((compute_cost(&pricing_nan, 0, 0, 0, 200_001, 0) - expected).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_provider_prefixed_non_opus_prefers_exact_openrouter_without_tier_advantage() {
+        let mut litellm = HashMap::new();
+        litellm.insert(
+            "claude-sonnet-4".into(),
+            ModelPricing {
+                input_cost_per_token: Some(0.000003),
+                output_cost_per_token: Some(0.000015),
+                ..Default::default()
+            },
+        );
+
+        let mut openrouter = HashMap::new();
+        openrouter.insert(
+            "anthropic/claude-sonnet-4".into(),
+            ModelPricing {
+                input_cost_per_token: Some(0.0000123),
+                output_cost_per_token: Some(0.0000456),
+                ..Default::default()
+            },
+        );
+
+        let lookup = PricingLookup::new(litellm, openrouter, HashMap::new());
+        let resolved = lookup.lookup("anthropic/claude-sonnet-4").unwrap();
+        assert_eq!(resolved.source, "OpenRouter");
+        assert_eq!(resolved.matched_key, "anthropic/claude-sonnet-4");
+    }
+
+    #[test]
+    fn test_provider_prefixed_override_requires_valid_base_and_above_pair() {
+        let mut litellm = HashMap::new();
+        litellm.insert(
+            "claude-sonnet-4".into(),
+            ModelPricing {
+                // Above tier exists, but corresponding base is missing.
+                // This must not qualify for provider-prefixed override.
+                input_cost_per_token: None,
+                input_cost_per_token_above_200k_tokens: Some(0.00002),
+                ..Default::default()
+            },
+        );
+
+        let mut openrouter = HashMap::new();
+        openrouter.insert(
+            "anthropic/claude-sonnet-4".into(),
+            ModelPricing {
+                input_cost_per_token: Some(0.0000123),
+                output_cost_per_token: Some(0.0000456),
+                ..Default::default()
+            },
+        );
+
+        let lookup = PricingLookup::new(litellm, openrouter, HashMap::new());
+        let resolved = lookup.lookup("anthropic/claude-sonnet-4").unwrap();
+        assert_eq!(resolved.source, "OpenRouter");
+        assert_eq!(resolved.matched_key, "anthropic/claude-sonnet-4");
+    }
+
+    #[test]
+    fn test_provider_prefixed_override_rejects_invalid_base_even_with_above() {
+        let mut litellm = HashMap::new();
+        litellm.insert(
+            "claude-sonnet-4".into(),
+            ModelPricing {
+                input_cost_per_token: Some(f64::NAN),
+                input_cost_per_token_above_200k_tokens: Some(0.00002),
+                ..Default::default()
+            },
+        );
+
+        let mut openrouter = HashMap::new();
+        openrouter.insert(
+            "anthropic/claude-sonnet-4".into(),
+            ModelPricing {
+                input_cost_per_token: Some(0.0000123),
+                output_cost_per_token: Some(0.0000456),
+                ..Default::default()
+            },
+        );
+
+        let lookup = PricingLookup::new(litellm, openrouter, HashMap::new());
+        let resolved = lookup.lookup("anthropic/claude-sonnet-4").unwrap();
+        assert_eq!(resolved.source, "OpenRouter");
+        assert_eq!(resolved.matched_key, "anthropic/claude-sonnet-4");
+    }
+
+    #[test]
+    fn test_provider_prefixed_override_allows_zero_base_with_valid_above() {
+        let mut litellm = HashMap::new();
+        litellm.insert(
+            "claude-sonnet-4".into(),
+            ModelPricing {
+                // Policy: base=0 with valid above is a valid tier pair.
+                input_cost_per_token: Some(0.0),
+                input_cost_per_token_above_200k_tokens: Some(0.00002),
+                ..Default::default()
+            },
+        );
+
+        let mut openrouter = HashMap::new();
+        openrouter.insert(
+            "anthropic/claude-sonnet-4".into(),
+            ModelPricing {
+                input_cost_per_token: Some(0.0000123),
+                output_cost_per_token: Some(0.0000456),
+                ..Default::default()
+            },
+        );
+
+        let lookup = PricingLookup::new(litellm, openrouter, HashMap::new());
+        let resolved = lookup.lookup("anthropic/claude-sonnet-4").unwrap();
+        assert_eq!(resolved.source, "LiteLLM");
+        assert_eq!(resolved.matched_key, "claude-sonnet-4");
+    }
+
+    #[test]
+    fn test_provider_prefixed_cache_only_tier_keeps_exact_openrouter() {
+        let mut litellm = HashMap::new();
+        litellm.insert(
+            "claude-sonnet-4".into(),
+            ModelPricing {
+                cache_read_input_token_cost: Some(0.0000001),
+                cache_read_input_token_cost_above_200k_tokens: Some(0.0000002),
+                cache_creation_input_token_cost: Some(0.0000003),
+                cache_creation_input_token_cost_above_200k_tokens: Some(0.0000004),
+                ..Default::default()
+            },
+        );
+
+        let mut openrouter = HashMap::new();
+        openrouter.insert(
+            "anthropic/claude-sonnet-4".into(),
+            ModelPricing {
+                input_cost_per_token: Some(0.0000123),
+                output_cost_per_token: Some(0.0000456),
+                ..Default::default()
+            },
+        );
+
+        let lookup = PricingLookup::new(litellm, openrouter, HashMap::new());
+        let resolved = lookup.lookup("anthropic/claude-sonnet-4").unwrap();
+        assert_eq!(resolved.source, "OpenRouter");
+        assert_eq!(resolved.matched_key, "anthropic/claude-sonnet-4");
+    }
+
+    #[test]
+    fn test_provider_prefixed_opus_4_6_prefers_litellm_tiered_pricing() {
+        let mut litellm = HashMap::new();
+        litellm.insert(
+            "claude-opus-4-6".into(),
+            ModelPricing {
+                input_cost_per_token: Some(0.00001),
+                input_cost_per_token_above_200k_tokens: Some(0.00002),
+                output_cost_per_token: Some(0.00005),
+                output_cost_per_token_above_200k_tokens: Some(0.00006),
+                cache_read_input_token_cost: Some(0.000001),
+                cache_read_input_token_cost_above_200k_tokens: Some(0.000002),
+                cache_creation_input_token_cost: Some(0.000003),
+                cache_creation_input_token_cost_above_200k_tokens: Some(0.000004),
+            },
+        );
+
+        let mut openrouter = HashMap::new();
+        openrouter.insert(
+            "anthropic/claude-opus-4-6".into(),
+            ModelPricing {
+                input_cost_per_token: Some(0.123),
+                output_cost_per_token: Some(0.456),
+                ..Default::default()
+            },
+        );
+
+        let lookup = PricingLookup::new(litellm, openrouter, HashMap::new());
+        let resolved = lookup.lookup("anthropic/claude-opus-4-6").unwrap();
+        assert_eq!(resolved.source, "LiteLLM");
+        assert_eq!(resolved.matched_key, "claude-opus-4-6");
+
+        let cost = lookup.calculate_cost("anthropic/claude-opus-4-6", 200_001, 0, 0, 0, 0);
+        let expected = 200_000.0 * 0.00001 + 0.00002;
+        assert!((cost - expected).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_calculate_cost_tiered_all_buckets_with_reasoning_threshold_crossing() {
+        let mut litellm = HashMap::new();
+        litellm.insert(
+            "claude-opus-4-6".into(),
+            ModelPricing {
+                input_cost_per_token: Some(0.000001),
+                input_cost_per_token_above_200k_tokens: Some(0.000002),
+                output_cost_per_token: Some(0.000003),
+                output_cost_per_token_above_200k_tokens: Some(0.000004),
+                cache_read_input_token_cost: Some(0.0000001),
+                cache_read_input_token_cost_above_200k_tokens: Some(0.0000002),
+                cache_creation_input_token_cost: Some(0.0000003),
+                cache_creation_input_token_cost_above_200k_tokens: Some(0.0000004),
+            },
+        );
+
+        let lookup = PricingLookup::new(litellm, HashMap::new(), HashMap::new());
+        let cost = lookup.calculate_cost("claude-opus-4-6", 200_001, 199_999, 200_001, 200_001, 2);
+
+        let expected_input = 200_000.0 * 0.000001 + 0.000002;
+        let expected_output = 200_000.0 * 0.000003 + 0.000004; // output + reasoning = 200_001
+        let expected_cache_read = 200_000.0 * 0.0000001 + 0.0000002;
+        let expected_cache_write = 200_000.0 * 0.0000003 + 0.0000004;
+        let expected =
+            expected_input + expected_output + expected_cache_read + expected_cache_write;
+
+        assert!((cost - expected).abs() < 1e-12);
     }
 
     #[test]

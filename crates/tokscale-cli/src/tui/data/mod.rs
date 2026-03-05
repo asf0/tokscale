@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
 
 use anyhow::Result;
@@ -51,7 +51,7 @@ pub struct DailyUsage {
     pub date: NaiveDate,
     pub tokens: TokenBreakdown,
     pub cost: f64,
-    pub models: HashMap<String, DailyModelInfo>,
+    pub models: BTreeMap<String, DailyModelInfo>,
 }
 
 #[derive(Debug, Clone)]
@@ -278,6 +278,14 @@ impl DataLoader {
                         .collect();
                     all_messages.extend(msgs);
                 }
+                ClientId::Mux => {
+                    let msgs: Vec<UnifiedMessage> = scan_result
+                        .get(ClientId::Mux)
+                        .par_iter()
+                        .flat_map(|path| sessions::mux::parse_mux_file(path))
+                        .collect();
+                    all_messages.extend(msgs);
+                }
             }
         }
 
@@ -426,7 +434,7 @@ impl DataLoader {
                     date,
                     tokens: TokenBreakdown::default(),
                     cost: 0.0,
-                    models: HashMap::new(),
+                    models: BTreeMap::new(),
                 });
 
                 daily_entry.tokens.input = daily_entry
@@ -693,7 +701,7 @@ mod tests {
     #[test]
     fn test_client_all() {
         let clients = ClientId::ALL;
-        assert_eq!(clients.len(), 13);
+        assert_eq!(clients.len(), 14);
         assert_eq!(clients[0], ClientId::OpenCode);
         assert_eq!(clients[1], ClientId::Claude);
         assert_eq!(clients[2], ClientId::Codex);
@@ -707,6 +715,7 @@ mod tests {
         assert_eq!(clients[10], ClientId::Qwen);
         assert_eq!(clients[11], ClientId::RooCode);
         assert_eq!(clients[12], ClientId::KiloCode);
+        assert_eq!(clients[13], ClientId::Mux);
     }
 
     #[test]
@@ -751,6 +760,7 @@ mod tests {
             crate::tui::client_ui::display_name(ClientId::KiloCode),
             "Kilo"
         );
+        assert_eq!(crate::tui::client_ui::display_name(ClientId::Mux), "Mux");
     }
 
     #[test]
@@ -768,6 +778,7 @@ mod tests {
         assert_eq!(crate::tui::client_ui::hotkey(ClientId::Qwen), 'w');
         assert_eq!(crate::tui::client_ui::hotkey(ClientId::RooCode), 'r');
         assert_eq!(crate::tui::client_ui::hotkey(ClientId::KiloCode), 'k');
+        assert_eq!(crate::tui::client_ui::hotkey(ClientId::Mux), 'x');
     }
 
     #[test]
@@ -818,6 +829,7 @@ mod tests {
             crate::tui::client_ui::from_hotkey('k'),
             Some(ClientId::KiloCode)
         );
+        assert_eq!(crate::tui::client_ui::from_hotkey('x'), Some(ClientId::Mux));
         assert_eq!(crate::tui::client_ui::from_hotkey('a'), None);
     }
 

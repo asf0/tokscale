@@ -151,10 +151,12 @@ fn render_help_row(frame: &mut Frame, app: &App, area: Rect) {
     let is_very_narrow = app.is_very_narrow();
 
     let spans = if is_very_narrow {
-        vec![
+        let mut spans = vec![
             Span::styled("↑↓", Style::default().fg(app.theme.muted)),
             Span::styled("·", Style::default().fg(app.theme.muted)),
             Span::styled("←→", Style::default().fg(app.theme.muted)),
+            Span::styled("·", Style::default().fg(app.theme.muted)),
+            Span::styled("d/t/c", Style::default().fg(Color::Blue)),
             Span::styled("·", Style::default().fg(app.theme.muted)),
             Span::styled("[s]", Style::default().fg(Color::Cyan)),
             Span::styled("·", Style::default().fg(app.theme.muted)),
@@ -165,41 +167,65 @@ fn render_help_row(frame: &mut Frame, app: &App, area: Rect) {
             Span::styled("[r]", Style::default().fg(Color::Yellow)),
             Span::styled("·", Style::default().fg(app.theme.muted)),
             Span::styled("q", Style::default().fg(app.theme.muted)),
-        ]
+        ];
+        if app.current_tab == Tab::Daily {
+            spans.push(Span::styled("·", Style::default().fg(app.theme.muted)));
+            spans.push(Span::styled("j", Style::default().fg(Color::Yellow)));
+        }
+        spans
     } else {
-        vec![
+        let mut spans = vec![
             Span::styled(
                 "↑↓ scroll • ←→/tab view • ",
                 Style::default().fg(app.theme.muted),
             ),
-            Span::styled("[s:sources]", Style::default().fg(Color::Cyan)),
-            Span::styled(" ", Style::default()),
-            Span::styled(
-                format!("[g:{}]", app.group_by.borrow()),
-                Style::default().fg(Color::Cyan),
-            ),
+            Span::styled("[d/t/c:sort]", Style::default().fg(Color::Blue)),
             Span::styled(" • ", Style::default().fg(app.theme.muted)),
-            Span::styled(
-                format!("[p:{}]", app.theme.name.as_str()),
-                Style::default().fg(Color::Magenta),
-            ),
-            Span::styled(" ", Style::default()),
-            Span::styled(
-                if app.auto_refresh {
-                    format!("[R:auto {}s]", app.auto_refresh_interval.as_secs())
-                } else {
-                    "[R:auto off]".to_string()
-                },
-                Style::default().fg(if app.auto_refresh {
-                    Color::Green
-                } else {
-                    app.theme.muted
-                }),
-            ),
-            Span::styled(" • ", Style::default().fg(app.theme.muted)),
-            Span::styled("[r:refresh]", Style::default().fg(Color::Yellow)),
-            Span::styled(" • e • q", Style::default().fg(app.theme.muted)),
-        ]
+        ];
+        if app.current_tab == Tab::Daily {
+            spans.push(Span::styled(
+                "[j:today]",
+                Style::default().fg(Color::Yellow),
+            ));
+            spans.push(Span::styled(" • ", Style::default().fg(app.theme.muted)));
+        }
+        spans.push(Span::styled(
+            "[s:sources]",
+            Style::default().fg(Color::Cyan),
+        ));
+        spans.push(Span::styled(" ", Style::default()));
+        spans.push(Span::styled(
+            format!("[g:{}]", app.group_by.borrow()),
+            Style::default().fg(Color::Cyan),
+        ));
+        spans.push(Span::styled(" • ", Style::default().fg(app.theme.muted)));
+        spans.push(Span::styled(
+            format!("[p:{}]", app.theme.name.as_str()),
+            Style::default().fg(Color::Magenta),
+        ));
+        spans.push(Span::styled(" ", Style::default()));
+        spans.push(Span::styled(
+            if app.auto_refresh {
+                format!("[R:auto {}s]", app.auto_refresh_interval.as_secs())
+            } else {
+                "[R:auto off]".to_string()
+            },
+            Style::default().fg(if app.auto_refresh {
+                Color::Green
+            } else {
+                app.theme.muted
+            }),
+        ));
+        spans.push(Span::styled(" • ", Style::default().fg(app.theme.muted)));
+        spans.push(Span::styled(
+            "[r:refresh]",
+            Style::default().fg(Color::Yellow),
+        ));
+        spans.push(Span::styled(
+            " • e • q",
+            Style::default().fg(app.theme.muted),
+        ));
+        spans
     };
 
     let line = Line::from(spans);

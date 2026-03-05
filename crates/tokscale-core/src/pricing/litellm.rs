@@ -11,9 +11,13 @@ const INITIAL_BACKOFF_MS: u64 = 200;
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ModelPricing {
     pub input_cost_per_token: Option<f64>,
+    pub input_cost_per_token_above_200k_tokens: Option<f64>,
     pub output_cost_per_token: Option<f64>,
+    pub output_cost_per_token_above_200k_tokens: Option<f64>,
     pub cache_creation_input_token_cost: Option<f64>,
+    pub cache_creation_input_token_cost_above_200k_tokens: Option<f64>,
     pub cache_read_input_token_cost: Option<f64>,
+    pub cache_read_input_token_cost_above_200k_tokens: Option<f64>,
 }
 
 pub type PricingDataset = HashMap<String, ModelPricing>;
@@ -97,4 +101,72 @@ pub async fn fetch() -> Result<PricingDataset, reqwest::Error> {
     }
 
     Err(last_error.expect("should have error after retries"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_deserialize_model_pricing_with_above_200k_fields() {
+        let pricing: ModelPricing = serde_json::from_str(
+            r#"{
+                "input_cost_per_token": 0.0000015,
+                "input_cost_per_token_above_200k_tokens": 0.000003,
+                "output_cost_per_token": 0.0000075,
+                "output_cost_per_token_above_200k_tokens": 0.000015,
+                "cache_creation_input_token_cost": 0.000001875,
+                "cache_creation_input_token_cost_above_200k_tokens": 0.00000375,
+                "cache_read_input_token_cost": 0.00000015,
+                "cache_read_input_token_cost_above_200k_tokens": 0.0000003
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(pricing.input_cost_per_token, Some(0.0000015));
+        assert_eq!(
+            pricing.input_cost_per_token_above_200k_tokens,
+            Some(0.000003)
+        );
+        assert_eq!(pricing.output_cost_per_token, Some(0.0000075));
+        assert_eq!(
+            pricing.output_cost_per_token_above_200k_tokens,
+            Some(0.000015)
+        );
+        assert_eq!(pricing.cache_creation_input_token_cost, Some(0.000001875));
+        assert_eq!(
+            pricing.cache_creation_input_token_cost_above_200k_tokens,
+            Some(0.00000375)
+        );
+        assert_eq!(pricing.cache_read_input_token_cost, Some(0.00000015));
+        assert_eq!(
+            pricing.cache_read_input_token_cost_above_200k_tokens,
+            Some(0.0000003)
+        );
+    }
+
+    #[test]
+    fn test_deserialize_model_pricing_without_above_200k_fields() {
+        let pricing: ModelPricing = serde_json::from_str(
+            r#"{
+                "input_cost_per_token": 0.00000125,
+                "output_cost_per_token": 0.00001,
+                "cache_creation_input_token_cost": 0.00000125,
+                "cache_read_input_token_cost": 0.000000125
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(pricing.input_cost_per_token, Some(0.00000125));
+        assert_eq!(pricing.input_cost_per_token_above_200k_tokens, None);
+        assert_eq!(pricing.output_cost_per_token, Some(0.00001));
+        assert_eq!(pricing.output_cost_per_token_above_200k_tokens, None);
+        assert_eq!(pricing.cache_creation_input_token_cost, Some(0.00000125));
+        assert_eq!(
+            pricing.cache_creation_input_token_cost_above_200k_tokens,
+            None
+        );
+        assert_eq!(pricing.cache_read_input_token_cost, Some(0.000000125));
+        assert_eq!(pricing.cache_read_input_token_cost_above_200k_tokens, None);
+    }
 }

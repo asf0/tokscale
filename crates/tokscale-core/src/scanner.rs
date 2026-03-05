@@ -135,6 +135,7 @@ pub fn scan_directory(root: &str, pattern: &str) -> Vec<PathBuf> {
                 "sessions.json" => file_name == "sessions.json",
                 "wire.jsonl" => file_name == "wire.jsonl",
                 "ui_messages.json" => file_name == "ui_messages.json",
+                "session-usage.json" => file_name == "session-usage.json",
                 _ => false,
             }
         })
