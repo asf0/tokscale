@@ -62,6 +62,9 @@ const CloseButton = styled.button`
   flex: 0 0 auto;
   min-height: 44px;
   min-width: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 
   &:hover {
     background-color: var(--color-btn-hover-bg);

@@ -1,13 +1,18 @@
+mod agents;
 mod bar_chart;
 mod daily;
 pub mod dialog;
 mod footer;
 mod header;
+mod hourly;
+mod hourly_profile;
+mod minutely;
 mod models;
 mod overview;
 pub mod spinner;
 mod stats;
-mod widgets;
+mod usage;
+pub(crate) mod widgets;
 
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Paragraph};
@@ -42,8 +47,12 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         match app.current_tab {
             Tab::Overview => overview::render(frame, app, chunks[1]),
             Tab::Models => models::render(frame, app, chunks[1]),
+            Tab::Agents => agents::render(frame, app, chunks[1]),
             Tab::Daily => daily::render(frame, app, chunks[1]),
+            Tab::Hourly => hourly::render(frame, app, chunks[1]),
+            Tab::Minutely => minutely::render(frame, app, chunks[1]),
             Tab::Stats => stats::render(frame, app, chunks[1]),
+            Tab::Usage => usage::render(frame, app, chunks[1]),
         }
     }
 
@@ -72,7 +81,7 @@ fn render_loading(frame: &mut Frame, app: &App, area: Rect) {
         ])
         .split(inner)[1];
 
-    let mut spans = spinner::get_scanner_spans(app.spinner_frame);
+    let mut spans = spinner::get_scanner_spans(app.spinner_frame, &app.theme);
     spans.push(Span::raw("  "));
     spans.push(Span::styled(
         spinner::get_phase_message("parsing-sources"),

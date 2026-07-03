@@ -1,8 +1,8 @@
 use ratatui::prelude::*;
-use ratatui::widgets::{Block, Borders, Paragraph};
+use ratatui::widgets::{Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation};
 
 use super::widgets::{
-    format_cost, format_tokens, get_client_color, get_client_display_name, get_model_color,
+    format_cost, format_tokens, get_client_color, get_client_display_name, viewport_scrollbar_state,
 };
 use crate::tui::app::{App, ClickAction};
 
@@ -13,16 +13,48 @@ const MONTH_LABELS: &[&str] = &[
 const DAY_LABELS: &[&str] = &["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Min(12), Constraint::Length(12)])
-        .split(area);
+    let has_selected_cell = app.selected_graph_cell.is_some();
+    let stats_compact_h: u16 = 8;
+    let min_breakdown_h: u16 = 6;
+    let min_graph_h: u16 = 12;
+    let sufficient_for_both = area.height >= min_graph_h + stats_compact_h + min_breakdown_h;
 
-    render_graph(frame, app, chunks[0]);
+    if has_selected_cell && sufficient_for_both {
+        // Three-zone layout: graph + compact stats + breakdown
+        let non_stats = area.height.saturating_sub(stats_compact_h);
+        let surplus = non_stats.saturating_sub(min_graph_h + min_breakdown_h);
+        let graph_h = min_graph_h + (surplus * 3 / 5); // 60% of surplus to graph
+        let breakdown_h = non_stats.saturating_sub(graph_h); // 40% to breakdown
 
-    if app.selected_graph_cell.is_some() {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(graph_h),
+                Constraint::Length(stats_compact_h),
+                Constraint::Length(breakdown_h),
+            ])
+            .split(area);
+
+        render_graph(frame, app, chunks[0]);
+        render_stats_panel(frame, app, chunks[1]);
+        render_breakdown_panel(frame, app, chunks[2]);
+    } else if has_selected_cell {
+        // Not enough room for both: graph + breakdown only
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(12), Constraint::Length(12)])
+            .split(area);
+
+        render_graph(frame, app, chunks[0]);
         render_breakdown_panel(frame, app, chunks[1]);
     } else {
+        // No cell selected: graph + full stats
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(12), Constraint::Length(12)])
+            .split(area);
+
+        render_graph(frame, app, chunks[0]);
         render_stats_panel(frame, app, chunks[1]);
     }
 }
@@ -33,6 +65,7 @@ fn render_graph(frame: &mut Frame, app: &mut App, area: Rect) {
     let theme_background = app.theme.background;
     let theme_muted = app.theme.muted;
     let theme_colors = app.theme.colors;
+    let subtle_text_style = app.theme.subtle_text_style();
     let selected_cell = app.selected_graph_cell;
     let is_narrow = app.is_narrow();
 
@@ -118,7 +151,7 @@ fn render_graph(frame: &mut Frame, app: &mut App, area: Rect) {
                     if is_selected {
                         ("▓▓", Style::default().fg(Color::White).bg(theme_colors[0]))
                     } else {
-                        ("· ", Style::default().fg(Color::Rgb(102, 102, 102)))
+                        ("· ", subtle_text_style)
                     }
                 }
             };
@@ -174,6 +207,10 @@ fn render_stats_panel(frame: &mut Frame, app: &App, area: Rect) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
+    if inner.height == 0 || inner.width == 0 {
+        return;
+    }
+
     let is_narrow = app.is_narrow();
     let graph = &app.data.graph;
 
@@ -224,23 +261,20 @@ fn render_stats_panel(frame: &mut Frame, app: &App, area: Rect) {
         })
         .unwrap_or(365);
 
-    let favorite_model = app
-        .data
-        .models
-        .iter()
-        .max_by(|a, b| {
-            a.cost
-                .partial_cmp(&b.cost)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        })
-        .map(|m| m.model.as_str())
-        .unwrap_or("N/A");
-
-    let model_color = get_model_color(favorite_model);
+    let favorite_model = app.data.models.iter().max_by(|a, b| {
+        a.cost
+            .partial_cmp(&b.cost)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let favorite_model_name = favorite_model.map(|m| m.model.as_str()).unwrap_or("N/A");
+    let model_color = favorite_model
+        .map(|m| app.model_color_for(&m.provider, &m.model))
+        .unwrap_or_else(|| app.model_color("N/A"));
     let sessions: u32 = app.data.models.iter().map(|m| m.session_count).sum();
 
     let col1_width = if is_narrow { 36u16 } else { 60u16 };
     let col2_x = inner.x + col1_width;
+    let y_max = inner.y + inner.height;
 
     let mut y = inner.y;
 
@@ -253,7 +287,7 @@ fn render_stats_panel(frame: &mut Frame, app: &App, area: Rect) {
         Span::styled(row1_label, Style::default().fg(app.theme.muted)),
         Span::raw(" "),
         Span::styled(
-            truncate_model_name(favorite_model, if is_narrow { 15 } else { 30 }),
+            truncate_model_name(favorite_model_name, if is_narrow { 15 } else { 30 }),
             Style::default().fg(model_color),
         ),
     ]);
@@ -278,6 +312,9 @@ fn render_stats_panel(frame: &mut Frame, app: &App, area: Rect) {
     );
 
     y += 1;
+    if y >= y_max {
+        return;
+    }
 
     let row2 = Line::from(vec![
         Span::styled("Sessions:", Style::default().fg(app.theme.muted)),
@@ -298,6 +335,9 @@ fn render_stats_panel(frame: &mut Frame, app: &App, area: Rect) {
     );
 
     y += 1;
+    if y >= y_max {
+        return;
+    }
 
     // Row 3: Current streak / Longest streak
     let streak_label = if is_narrow {
@@ -334,6 +374,9 @@ fn render_stats_panel(frame: &mut Frame, app: &App, area: Rect) {
     );
 
     y += 1;
+    if y >= y_max {
+        return;
+    }
 
     let active_label = if is_narrow { "Active:" } else { "Active days:" };
     let active_days_line = Line::from(vec![
@@ -350,10 +393,13 @@ fn render_stats_panel(frame: &mut Frame, app: &App, area: Rect) {
     );
 
     y += 2;
+    if y >= y_max {
+        return;
+    }
 
     let legend_spans = vec![
         Span::styled("Less ", Style::default().fg(app.theme.muted)),
-        Span::styled("· ", Style::default().fg(Color::Rgb(102, 102, 102))),
+        Span::styled("· ", app.theme.subtle_text_style()),
         Span::styled("██", Style::default().fg(app.theme.colors[1])),
         Span::raw(" "),
         Span::styled("██", Style::default().fg(app.theme.colors[2])),
@@ -370,6 +416,9 @@ fn render_stats_panel(frame: &mut Frame, app: &App, area: Rect) {
     );
 
     y += 2;
+    if y >= y_max {
+        return;
+    }
 
     if !is_narrow {
         let footer = Line::from(Span::styled(
@@ -388,7 +437,7 @@ fn render_stats_panel(frame: &mut Frame, app: &App, area: Rect) {
     }
 }
 
-fn render_breakdown_panel(frame: &mut Frame, app: &App, area: Rect) {
+fn render_breakdown_panel(frame: &mut Frame, app: &mut App, area: Rect) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(app.theme.border))
@@ -410,7 +459,10 @@ fn render_breakdown_panel(frame: &mut Frame, app: &App, area: Rect) {
 
     let graph = match &app.data.graph {
         Some(g) => g,
-        None => return,
+        None => {
+            app.stats_breakdown_total_lines = 0;
+            return;
+        }
     };
 
     let day = match graph
@@ -421,6 +473,7 @@ fn render_breakdown_panel(frame: &mut Frame, app: &App, area: Rect) {
     {
         Some(d) => d,
         None => {
+            app.stats_breakdown_total_lines = 0;
             let no_data = Paragraph::new("No data for this day")
                 .style(Style::default().fg(app.theme.muted))
                 .alignment(Alignment::Center);
@@ -453,95 +506,110 @@ fn render_breakdown_panel(frame: &mut Frame, app: &App, area: Rect) {
     ];
 
     if let Some(daily) = daily_usage {
-        let mut grouped: std::collections::BTreeMap<
-            String,
-            Vec<(String, &crate::tui::data::DailyModelInfo)>,
-        > = std::collections::BTreeMap::new();
-        for (model_name, model_info) in &daily.models {
-            grouped
-                .entry(model_info.client.clone())
-                .or_default()
-                .push((model_name.clone(), model_info));
-        }
-        for (client, mut models) in grouped {
-            models.sort_by(|a, b| b.1.tokens.total().cmp(&a.1.tokens.total()));
+        if daily.source_breakdown.is_empty() {
+            lines.push(Line::from(Span::styled(
+                "No detailed breakdown available",
+                Style::default().fg(app.theme.muted),
+            )));
+        } else {
+            for (client, source_info) in &daily.source_breakdown {
+                let mut models: Vec<_> = source_info.models.values().collect();
+                models.sort_by(|a, b| {
+                    b.tokens
+                        .total()
+                        .cmp(&a.tokens.total())
+                        .then_with(|| a.display_name.cmp(&b.display_name))
+                });
 
-            let client_color = get_client_color(&client);
-            let client_name = get_client_display_name(&client);
-            let model_count = models.len();
-            let plural = if model_count > 1 { "s" } else { "" };
+                let client_color = app.theme.color(get_client_color(client));
+                let client_name = get_client_display_name(client);
+                let model_count = models.len();
+                let plural = if model_count > 1 { "s" } else { "" };
 
-            lines.push(Line::from(vec![
-                Span::styled(
-                    format!("● {}", client_name),
-                    Style::default()
-                        .fg(client_color)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(
-                    format!(" ({} model{})", model_count, plural),
-                    Style::default().fg(app.theme.muted),
-                ),
-            ]));
-
-            for (model_name, model_info) in models {
-                let model_color = get_model_color(&model_name);
                 lines.push(Line::from(vec![
-                    Span::raw("  "),
-                    Span::styled("●", Style::default().fg(model_color)),
                     Span::styled(
-                        format!(" {}", truncate_model_name(&model_name, 25)),
-                        Style::default().fg(Color::White),
+                        format!("● {}", client_name),
+                        Style::default()
+                            .fg(client_color)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(
+                        format!(" ({} model{})", model_count, plural),
+                        Style::default().fg(app.theme.muted),
+                    ),
+                    Span::raw("  "),
+                    Span::styled(
+                        format_cost(source_info.cost),
+                        Style::default()
+                            .fg(Color::Green)
+                            .add_modifier(Modifier::BOLD),
                     ),
                 ]));
 
-                let is_narrow = app.is_narrow();
-                if is_narrow {
+                for model_info in models {
+                    let model_color =
+                        app.model_color_for(&model_info.provider, &model_info.color_key);
                     lines.push(Line::from(vec![
-                        Span::styled("    ", Style::default()),
+                        Span::raw("  "),
+                        Span::styled("●", Style::default().fg(model_color)),
                         Span::styled(
-                            format_tokens(model_info.tokens.input),
-                            Style::default().fg(Color::Rgb(170, 170, 170)),
-                        ),
-                        Span::styled("/", Style::default().fg(Color::Rgb(102, 102, 102))),
-                        Span::styled(
-                            format_tokens(model_info.tokens.output),
-                            Style::default().fg(Color::Rgb(170, 170, 170)),
-                        ),
-                        Span::styled("/", Style::default().fg(Color::Rgb(102, 102, 102))),
-                        Span::styled(
-                            format_tokens(model_info.tokens.cache_read),
-                            Style::default().fg(Color::Rgb(170, 170, 170)),
-                        ),
-                        Span::styled("/", Style::default().fg(Color::Rgb(102, 102, 102))),
-                        Span::styled(
-                            format_tokens(model_info.tokens.cache_write),
-                            Style::default().fg(Color::Rgb(170, 170, 170)),
+                            format!(" {}", truncate_model_name(&model_info.display_name, 25)),
+                            Style::default().fg(Color::White),
                         ),
                     ]));
-                } else {
-                    lines.push(Line::from(vec![
-                        Span::styled("    In: ", Style::default().fg(Color::Rgb(102, 102, 102))),
-                        Span::styled(
-                            format_tokens(model_info.tokens.input),
-                            Style::default().fg(Color::Rgb(170, 170, 170)),
-                        ),
-                        Span::styled(" · Out: ", Style::default().fg(Color::Rgb(102, 102, 102))),
-                        Span::styled(
-                            format_tokens(model_info.tokens.output),
-                            Style::default().fg(Color::Rgb(170, 170, 170)),
-                        ),
-                        Span::styled(" · CR: ", Style::default().fg(Color::Rgb(102, 102, 102))),
-                        Span::styled(
-                            format_tokens(model_info.tokens.cache_read),
-                            Style::default().fg(Color::Rgb(170, 170, 170)),
-                        ),
-                        Span::styled(" · CW: ", Style::default().fg(Color::Rgb(102, 102, 102))),
-                        Span::styled(
-                            format_tokens(model_info.tokens.cache_write),
-                            Style::default().fg(Color::Rgb(170, 170, 170)),
-                        ),
-                    ]));
+
+                    let is_narrow = app.is_narrow();
+                    if is_narrow {
+                        let secondary_text_style = app.theme.secondary_text_style();
+                        let subtle_text_style = app.theme.subtle_text_style();
+                        lines.push(Line::from(vec![
+                            Span::styled("    ", Style::default()),
+                            Span::styled(
+                                format_tokens(model_info.tokens.input),
+                                secondary_text_style,
+                            ),
+                            Span::styled("/", subtle_text_style),
+                            Span::styled(
+                                format_tokens(model_info.tokens.output),
+                                secondary_text_style,
+                            ),
+                            Span::styled("/", subtle_text_style),
+                            Span::styled(
+                                format_tokens(model_info.tokens.cache_read),
+                                secondary_text_style,
+                            ),
+                            Span::styled("/", subtle_text_style),
+                            Span::styled(
+                                format_tokens(model_info.tokens.cache_write),
+                                secondary_text_style,
+                            ),
+                        ]));
+                    } else {
+                        let secondary_text_style = app.theme.secondary_text_style();
+                        let subtle_text_style = app.theme.subtle_text_style();
+                        lines.push(Line::from(vec![
+                            Span::styled("    In: ", subtle_text_style),
+                            Span::styled(
+                                format_tokens(model_info.tokens.input),
+                                secondary_text_style,
+                            ),
+                            Span::styled(" · Out: ", subtle_text_style),
+                            Span::styled(
+                                format_tokens(model_info.tokens.output),
+                                secondary_text_style,
+                            ),
+                            Span::styled(" · CR: ", subtle_text_style),
+                            Span::styled(
+                                format_tokens(model_info.tokens.cache_read),
+                                secondary_text_style,
+                            ),
+                            Span::styled(" · CW: ", subtle_text_style),
+                            Span::styled(
+                                format_tokens(model_info.tokens.cache_write),
+                                secondary_text_style,
+                            ),
+                        ]));
+                    }
                 }
             }
         }
@@ -552,8 +620,42 @@ fn render_breakdown_panel(frame: &mut Frame, app: &App, area: Rect) {
         )));
     }
 
-    let paragraph = Paragraph::new(lines);
+    let visible_height = inner.height.max(1) as usize;
+    app.max_visible_items = visible_height;
+    app.stats_breakdown_total_lines = lines.len();
+
+    if lines.is_empty() {
+        app.selected_index = 0;
+        app.scroll_offset = 0;
+    } else {
+        app.selected_index = app.selected_index.min(lines.len() - 1);
+        let max_scroll = lines.len().saturating_sub(visible_height);
+        app.scroll_offset = app.scroll_offset.min(max_scroll);
+    }
+
+    let paragraph = Paragraph::new(lines).scroll((app.scroll_offset as u16, 0));
     frame.render_widget(paragraph, inner);
+
+    if app.stats_breakdown_total_lines > visible_height {
+        let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+            .begin_symbol(Some("▲"))
+            .end_symbol(Some("▼"));
+
+        let mut scrollbar_state = viewport_scrollbar_state(
+            app.stats_breakdown_total_lines,
+            app.scroll_offset,
+            visible_height,
+        );
+
+        frame.render_stateful_widget(
+            scrollbar,
+            area.inner(Margin {
+                horizontal: 0,
+                vertical: 1,
+            }),
+            &mut scrollbar_state,
+        );
+    }
 }
 
 fn truncate_model_name(s: &str, max_chars: usize) -> String {

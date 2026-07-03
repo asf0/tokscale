@@ -1,7 +1,8 @@
 import { cookies } from "next/headers";
-import { db, sessions, users, apiTokens } from "@/lib/db";
-import { eq, and, gt, or, isNull } from "drizzle-orm";
-import { generateRandomString } from "./utils";
+import { db, sessions, users } from "@/lib/db";
+import { eq, and, gt } from "drizzle-orm";
+import { generateRandomString, hashToken } from "./utils";
+import { authenticatePersonalToken } from "./personalTokens";
 
 const SESSION_COOKIE_NAME = "tt_session";
 const SESSION_DURATION_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
@@ -11,7 +12,6 @@ export interface SessionUser {
   username: string;
   displayName: string | null;
   avatarUrl: string | null;
-  isAdmin: boolean;
 }
 
 /**
@@ -26,6 +26,8 @@ export async function getSession(): Promise<SessionUser | null> {
     return null;
   }
 
+  const sessionTokenHash = hashToken(sessionToken);
+
   const result = await db
     .select({
       session: sessions,
@@ -33,7 +35,9 @@ export async function getSession(): Promise<SessionUser | null> {
     })
     .from(sessions)
     .innerJoin(users, eq(sessions.userId, users.id))
-    .where(and(eq(sessions.token, sessionToken), gt(sessions.expiresAt, new Date())))
+    .where(
+      and(eq(sessions.tokenHash, sessionTokenHash), gt(sessions.expiresAt, new Date()))
+    )
     .limit(1);
 
   if (result.length === 0) {
@@ -47,7 +51,6 @@ export async function getSession(): Promise<SessionUser | null> {
     username: user.username,
     displayName: user.displayName,
     avatarUrl: user.avatarUrl,
-    isAdmin: user.isAdmin,
   };
 }
 
@@ -59,11 +62,12 @@ export async function createSession(
   options: { source?: "web" | "cli"; userAgent?: string } = {}
 ): Promise<string> {
   const token = generateRandomString(64);
+  const tokenHash = hashToken(token);
   const expiresAt = new Date(Date.now() + SESSION_DURATION_MS);
 
   await db.insert(sessions).values({
     userId,
-    token,
+    tokenHash,
     expiresAt,
     source: options.source ?? "web",
     userAgent: options.userAgent,
@@ -95,7 +99,7 @@ export async function clearSession(): Promise<void> {
   const sessionToken = cookieStore.get(SESSION_COOKIE_NAME)?.value;
 
   if (sessionToken) {
-    await db.delete(sessions).where(eq(sessions.token, sessionToken));
+    await db.delete(sessions).where(eq(sessions.tokenHash, hashToken(sessionToken)));
   }
 
   cookieStore.delete(SESSION_COOKIE_NAME);
@@ -108,43 +112,17 @@ export async function clearSession(): Promise<void> {
 export async function validateApiToken(
   token: string
 ): Promise<SessionUser | null> {
-  if (!token.startsWith("tt_")) {
+  const result = await authenticatePersonalToken(token);
+
+  if (result.status !== "valid") {
     return null;
   }
-
-  const result = await db
-    .select({
-      apiToken: apiTokens,
-      user: users,
-    })
-    .from(apiTokens)
-    .innerJoin(users, eq(apiTokens.userId, users.id))
-    .where(
-      and(
-        eq(apiTokens.token, token),
-        or(isNull(apiTokens.expiresAt), gt(apiTokens.expiresAt, new Date()))
-      )
-    )
-    .limit(1);
-
-  if (result.length === 0) {
-    return null;
-  }
-
-  // Update last_used_at
-  await db
-    .update(apiTokens)
-    .set({ lastUsedAt: new Date() })
-    .where(eq(apiTokens.token, token));
-
-  const { user } = result[0];
 
   return {
-    id: user.id,
-    username: user.username,
-    displayName: user.displayName,
-    avatarUrl: user.avatarUrl,
-    isAdmin: user.isAdmin,
+    id: result.userId,
+    username: result.username,
+    displayName: result.displayName,
+    avatarUrl: result.avatarUrl,
   };
 }
 
@@ -165,33 +143,9 @@ export async function getSessionFromHeader(
     ? authHeader.slice(7)
     : authHeader;
 
-  // Check if it's an API token (CLI)
   if (token.startsWith("tt_")) {
     return validateApiToken(token);
   }
 
-  // Otherwise treat as session token (web)
-  const result = await db
-    .select({
-      session: sessions,
-      user: users,
-    })
-    .from(sessions)
-    .innerJoin(users, eq(sessions.userId, users.id))
-    .where(and(eq(sessions.token, token), gt(sessions.expiresAt, new Date())))
-    .limit(1);
-
-  if (result.length === 0) {
-    return null;
-  }
-
-  const { user } = result[0];
-
-  return {
-    id: user.id,
-    username: user.username,
-    displayName: user.displayName,
-    avatarUrl: user.avatarUrl,
-    isAdmin: user.isAdmin,
-  };
+  return null;
 }

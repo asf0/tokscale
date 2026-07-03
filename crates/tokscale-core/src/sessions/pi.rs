@@ -3,7 +3,8 @@
 //! Parses JSONL files from ~/.pi/agent/sessions/<encoded-cwd>/*.jsonl
 
 use super::utils::file_modified_timestamp_ms;
-use super::UnifiedMessage;
+use super::{normalize_workspace_key, workspace_label_from_key, UnifiedMessage};
+use crate::provider_identity::inferred_provider_from_model;
 use crate::TokenBreakdown;
 use serde::Deserialize;
 use std::io::{BufRead, BufReader};
@@ -68,6 +69,8 @@ pub fn parse_pi_file(path: &Path) -> Vec<UnifiedMessage> {
     let mut buffer = Vec::with_capacity(4096);
 
     let mut session_id: Option<String> = None;
+    let mut workspace_key: Option<String> = None;
+    let mut workspace_label: Option<String> = None;
     for line in reader.lines() {
         let line = match line {
             Ok(l) => l,
@@ -91,6 +94,8 @@ pub fn parse_pi_file(path: &Path) -> Vec<UnifiedMessage> {
                 return Vec::new();
             }
             session_id = Some(header.id);
+            workspace_key = header.cwd.as_deref().and_then(normalize_workspace_key);
+            workspace_label = workspace_key.as_deref().and_then(workspace_label_from_key);
             continue;
         }
 
@@ -124,9 +129,14 @@ pub fn parse_pi_file(path: &Path) -> Vec<UnifiedMessage> {
             None => continue,
         };
 
+        // A missing provider field is recoverable: infer it from the model name
+        // (and fall back to "pi") rather than dropping a message that carries
+        // valid tokens.
         let provider = match message.provider {
             Some(p) => p,
-            None => continue,
+            None => inferred_provider_from_model(&model)
+                .unwrap_or("pi")
+                .to_string(),
         };
 
         let timestamp = entry
@@ -135,7 +145,7 @@ pub fn parse_pi_file(path: &Path) -> Vec<UnifiedMessage> {
             .map(|dt| dt.timestamp_millis())
             .unwrap_or(fallback_timestamp);
 
-        messages.push(UnifiedMessage::new(
+        let mut unified = UnifiedMessage::new(
             "pi",
             model,
             provider,
@@ -149,7 +159,9 @@ pub fn parse_pi_file(path: &Path) -> Vec<UnifiedMessage> {
                 reasoning: 0,
             },
             0.0,
-        ));
+        );
+        unified.set_workspace(workspace_key.clone(), workspace_label.clone());
+        messages.push(unified);
     }
 
     messages
@@ -188,6 +200,8 @@ mod tests {
         assert_eq!(messages[0].tokens.output, 50);
         assert_eq!(messages[0].tokens.cache_read, 10);
         assert_eq!(messages[0].tokens.cache_write, 5);
+        assert_eq!(messages[0].workspace_key, Some("/tmp".to_string()));
+        assert_eq!(messages[0].workspace_label, Some("tmp".to_string()));
     }
 
     #[test]
