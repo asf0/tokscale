@@ -4,7 +4,7 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
-use chrono::NaiveDate;
+use chrono::{Datelike, NaiveDate};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
 use tokscale_core::ClientId;
@@ -2260,9 +2260,15 @@ impl App {
         let Some(month) = self.selected_monthly_detail_month.as_ref() else {
             return Vec::new();
         };
+        let Some((year, month)) = month.split_once('-').and_then(|(year, month)| {
+            Some((year.parse::<i32>().ok()?, month.parse::<u32>().ok()?))
+        }) else {
+            return Vec::new();
+        };
+
         self.get_sorted_daily()
             .into_iter()
-            .filter(|day| day.date.format("%Y-%m").to_string() == *month)
+            .filter(|day| day.date.year() == year && day.date.month() == month)
             .collect()
     }
 
