@@ -1982,8 +1982,8 @@ impl App {
         self.selected_index = restored_index;
 
         let max_visible = self.max_visible_items.max(1);
-        let viewport_still_holds = restored_index >= self.scroll_offset
-            && restored_index < self.scroll_offset + max_visible;
+        let viewport_still_holds = restored_index >= self.monthly_list_scroll_offset
+            && restored_index < self.monthly_list_scroll_offset + max_visible;
         self.scroll_offset = if viewport_still_holds {
             self.monthly_list_scroll_offset
         } else {
@@ -3225,6 +3225,32 @@ mod tests {
         assert!(!app.is_monthly_detail_active());
         assert_eq!(app.monthly_detail_month(), None);
         assert_eq!(app.current_tab, Tab::Monthly);
+    }
+
+    #[test]
+    fn test_close_monthly_detail_restores_saved_viewport() {
+        let mut app = make_app();
+        app.switch_tab(Tab::Monthly);
+        app.data.monthly = (1..=10)
+            .map(|month| monthly_usage(&format!("2026-{month:02}"), 100, 1.0))
+            .collect();
+        app.data.daily = vec![daily_usage(
+            "2026-03-10",
+            1.0,
+            vec![("model-a", "openai", 1.0)],
+        )];
+        app.max_visible_items = 4;
+        app.selected_index = 7;
+        app.scroll_offset = 6;
+
+        app.open_selected_monthly_detail();
+        assert_eq!(app.monthly_detail_month(), Some("2026-03"));
+        assert_eq!(app.scroll_offset, 0);
+
+        app.close_monthly_detail();
+
+        assert_eq!(app.selected_index, 7);
+        assert_eq!(app.scroll_offset, 6);
     }
 
     #[test]
